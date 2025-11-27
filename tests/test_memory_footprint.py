@@ -3,7 +3,6 @@ Tests to verify that memory footprint remains constant with multiple workers.
 This is the key test for zero-copy behavior.
 """
 
-import pytest
 import ray
 import torch
 import psutil
@@ -11,8 +10,7 @@ import os
 import gc
 import time
 import numpy as np
-from ray_zerocopy.invoke import rewrite_pipeline, ZeroCopyModel
-from ray_zerocopy.rewrite import extract_tensors
+from ray_zerocopy import ZeroCopyModel, rewrite_pipeline, extract_tensors
 
 
 def get_worker_memory_mb():
@@ -151,7 +149,7 @@ def test_memory_footprint_multiple_workers(ray_cluster):
     @ray.remote
     def worker_task_zerocopy(model_ref, input_data):
         """Worker task that loads and uses the model with zero-copy."""
-        from ray_zerocopy.invoke import ZeroCopyModel
+        from ray_zerocopy import ZeroCopyModel
 
         model = ZeroCopyModel.from_object_ref(model_ref)
         with torch.no_grad():
@@ -229,7 +227,7 @@ def test_memory_footprint_sequential_calls(ray_cluster):
 
     @ray.remote
     def sequential_worker(model_ref, input_data, iterations):
-        from ray_zerocopy.invoke import ZeroCopyModel
+        from ray_zerocopy import ZeroCopyModel
         import gc
 
         measurements = []
