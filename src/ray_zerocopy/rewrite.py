@@ -74,30 +74,12 @@ def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
 def _make_tensor_from_array(array):
     """
     Create a PyTorch tensor from a NumPy array, avoiding copies if possible.
-    Handles read-only Ray arrays by temporarily casting to writable view if needed.
     """
-    try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message="The given NumPy array is not writable"
-            )
-            return torch.as_tensor(array)
-    except ValueError as e:
-        # "At least one of the variables is not writeable" is the typical error
-        # when creating a tensor from a read-only numpy array
-        if "not writeable" in str(e) and not array.flags.writeable:
-            try:
-                # Create a view and try to set it writable to satisfy PyTorch.
-                # This allows zero-copy sharing from Plasma (Ray object store).
-                # The tensor should be treated as immutable!
-                view = array.view()
-                view.flags.writeable = True
-                return torch.as_tensor(view)
-            except Exception:
-                # Fallback to copy if we really can't map it (e.g. actual hardware read-only)
-                pass
-        # If it wasn't the specific writeable error, or the workaround failed, raise original
-        raise
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="The given NumPy array is not writable"
+        )
+        return torch.as_tensor(array)
 
 
 def replace_tensors(m: torch.nn.Module, tensors: List[Dict]):
