@@ -2,10 +2,10 @@
 Tests for the invoke module (rewrite_pipeline and call_model).
 """
 
-import pytest
 import ray
 import torch
-from ray_zerocopy.invoke import rewrite_pipeline, call_model
+
+from ray_zerocopy.invoke import call_model, rewrite_pipeline
 from ray_zerocopy.rewrite import extract_tensors
 
 

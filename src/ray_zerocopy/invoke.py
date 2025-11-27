@@ -18,10 +18,9 @@ Functions for invoking models that have been rewritten for zero-copy
 loading.
 """
 
-from typing import Any, Tuple, Set, List, Union
-
-
 import copy
+from typing import Any, Set
+
 import ray
 import torch
 

@@ -5,11 +5,7 @@ import torch
 import torch.nn as nn
 
 # Create a simple model
-model = nn.Sequential(
-    nn.Linear(10, 20),
-    nn.ReLU(),
-    nn.Linear(20, 5)
-)
+model = nn.Sequential(nn.Linear(10, 20), nn.ReLU(), nn.Linear(20, 5))
 model.eval()
 
 # Trace it
@@ -38,7 +34,7 @@ output = jit_model(x)
 print(f"\n✓ Inference works! Output shape: {output.shape}")
 
 # Test with scripted model too
-print("\n" + "="*50)
+print("\n" + "=" * 50)
 print("Testing with torch.jit.script...")
 scripted = torch.jit.script(model)
 print(f"Has state_dict: {hasattr(scripted, 'state_dict')}")

@@ -2,9 +2,9 @@
 Tests for the rewrite module (extract_tensors and replace_tensors).
 """
 
-import torch
 import numpy as np
-import pytest
+import torch
+
 from ray_zerocopy.rewrite import (
     extract_tensors,
     replace_tensors,

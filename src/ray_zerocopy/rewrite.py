@@ -21,9 +21,10 @@ empty version of the graph.
 """
 
 import copy
-import torch
-from typing import Dict, List, Tuple
 import warnings
+from typing import Dict, List, Tuple
+
+import torch
 
 
 def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:

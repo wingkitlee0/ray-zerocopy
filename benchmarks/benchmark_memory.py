@@ -1,13 +1,14 @@
 import argparse
+import gc
+import os
+import threading
 import time
+
+import psutil
 import ray
 import torch
-import psutil
-import os
-import gc
-import threading
+
 from ray_zerocopy import (
-    rewrite_pipeline,
     ZeroCopyModel,
 )
 
@@ -94,7 +95,7 @@ def monitor_memory(stop_event, interval=1.0):
                 f"[{timestamp}] Parent: {get_memory_mb(current_pid):.1f} MB | {workers_info}"
             )
 
-        except Exception as e:
+        except Exception:
             pass
 
         time.sleep(interval)
@@ -188,7 +189,7 @@ def main():
             # Fallback to local cluster with large object store
             ray.init(object_store_memory=4 * 1024 * 1024 * 1024)
 
-    print(f"Creating large model (~500MB)...")
+    print("Creating large model (~500MB)...")
     model = create_large_model()
 
     print(f"Starting benchmark with {args.workers} workers for {args.duration} seconds")

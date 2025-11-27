@@ -5,17 +5,20 @@ print("Testing import structure...")
 
 # Test main module
 print("\n1. Testing ray_zerocopy main module:")
-from ray_zerocopy import extract_tensors, replace_tensors, ZeroCopyModel
+from ray_zerocopy import replace_tensors
+
 print("  ✓ Main module imports work")
 
 # Test jit submodule
 print("\n2. Testing ray_zerocopy.jit submodule:")
-from ray_zerocopy.jit import extract_tensors, replace_tensors, ZeroCopyModel
+from ray_zerocopy.jit import replace_tensors
+
 print("  ✓ JIT submodule imports work")
 
 # Test that they are different
 from ray_zerocopy import extract_tensors as main_extract
 from ray_zerocopy.jit import extract_tensors as jit_extract
+
 print("\n3. Verifying they are different functions:")
 print(f"  Main extract_tensors: {main_extract.__module__}")
 print(f"  JIT extract_tensors: {jit_extract.__module__}")
@@ -47,6 +50,6 @@ if torch.allclose(orig_out, rest_out):
 else:
     print("  ✗ Outputs don't match")
 
-print("\n" + "="*50)
+print("\n" + "=" * 50)
 print("✓ All import tests passed!")
-print("="*50)
+print("=" * 50)
