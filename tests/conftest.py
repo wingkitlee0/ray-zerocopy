@@ -84,6 +84,64 @@ def transformer_like_model():
 
 
 @pytest.fixture
+def simple_jit_model():
+    """Create a simple TorchScript model for testing."""
+    model = nn.Sequential(
+        nn.Linear(100, 200),
+        nn.ReLU(),
+        nn.Linear(200, 50),
+        nn.ReLU(),
+        nn.Linear(50, 10),
+    )
+    model.eval()
+    example_input = torch.randn(1, 100)
+    return torch.jit.trace(model, example_input)
+
+
+@pytest.fixture
+def large_jit_model():
+    """Create a larger TorchScript model for testing."""
+    model = nn.Sequential(
+        nn.Linear(1000, 2000),
+        nn.ReLU(),
+        nn.Linear(2000, 1500),
+        nn.ReLU(),
+        nn.Linear(1500, 1000),
+        nn.ReLU(),
+        nn.Linear(1000, 500),
+        nn.ReLU(),
+        nn.Linear(500, 100),
+    )
+    model.eval()
+    example_input = torch.randn(1, 1000)
+    return torch.jit.trace(model, example_input)
+
+
+@pytest.fixture
+def conv_jit_model():
+    """Create a convolutional TorchScript model for testing."""
+
+    class ConvModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = nn.Conv2d(3, 16, 3, padding=1)
+            self.conv2 = nn.Conv2d(16, 32, 3, padding=1)
+            self.pool = nn.MaxPool2d(2, 2)
+            self.fc = nn.Linear(32 * 8 * 8, 10)
+
+        def forward(self, x):
+            x = self.pool(torch.relu(self.conv1(x)))
+            x = self.pool(torch.relu(self.conv2(x)))
+            x = x.view(x.size(0), -1)
+            return self.fc(x)
+
+    model = ConvModel()
+    model.eval()
+    example_input = torch.randn(1, 3, 32, 32)
+    return torch.jit.trace(model, example_input)
+
+
+@pytest.fixture
 def sample_pipeline():
     """Create a sample pipeline object with a model attribute."""
 
