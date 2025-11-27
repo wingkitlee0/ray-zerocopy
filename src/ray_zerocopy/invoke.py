@@ -18,7 +18,7 @@ Functions for invoking models that have been rewritten for zero-copy
 loading.
 """
 
-from typing import Any
+from typing import Any, Tuple, Set, List, Union
 
 
 import copy
@@ -63,6 +63,35 @@ def call_model(
         return method(*args, **kwargs)
 
 
+
+
+
+class _RemoteModelShim:
+    """
+    Shim object that forwards method calls to a remote Ray task.
+    """
+
+    def __init__(self, model_ref: ray.ObjectRef, valid_methods: Set[str]):
+        self._model_ref = model_ref
+        self._valid_methods = valid_methods
+
+    def __getattr__(self, name: str):
+        if name in self._valid_methods:
+
+            def _proxy(*args, **kwargs):
+                return ray.get(call_model.remote(self._model_ref, args, kwargs, name))
+
+            return _proxy
+        raise AttributeError(
+            f"'{type(self).__name__}' object has no attribute '{name}'"
+        )
+
+    def __call__(self, *args, **kwargs):
+        if "__call__" in self._valid_methods:
+            return ray.get(call_model.remote(self._model_ref, args, kwargs, "__call__"))
+        raise TypeError(f"'{type(self).__name__}' object is not callable")
+
+
 def rewrite_pipeline(pipeline: Any, method_names=("__call__",)) -> Any:
     """
     Rewrites PyTorch models in a model processing pipeline into Ray tasks
@@ -99,21 +128,11 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__",)) -> Any:
         model = getattr(result, name)
         model_ref = ray.put(extract_tensors(model))
 
-        # Define a separate class for each shim.
-        class _Callback:
-            _model_ref = model_ref
+        # Determine which of the requested methods actually exist on this model
+        valid_methods = {m for m in method_names if hasattr(model, m)}
 
-        # Generate a class method for each method we forward
-        for method_name in method_names:
-            if hasattr(model, method_name):
-
-                def method_shim(cls_, *args, **kwargs):
-                    return ray.get(
-                        call_model.remote(cls_._model_ref, args, kwargs, method_name)
-                    )
-
-                setattr(_Callback, method_name, method_shim)
-
-        setattr(result, name, _Callback())
+        # Create the shim
+        shim = _RemoteModelShim(model_ref, valid_methods)
+        setattr(result, name, shim)
 
     return result

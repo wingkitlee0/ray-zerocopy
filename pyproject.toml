@@ -12,9 +12,20 @@ dependencies = [
     "torch>=2",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "psutil>=5.9.0",
+]
+
 [project.scripts]
 ray-zerocopy = "ray_zerocopy:main"
 
 [build-system]
 requires = ["uv_build>=0.8.22,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v"

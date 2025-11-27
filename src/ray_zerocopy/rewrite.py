@@ -23,6 +23,7 @@ empty version of the graph.
 import copy
 import torch
 from typing import Dict, List, Tuple
+import warnings
 
 
 def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
@@ -70,6 +71,35 @@ def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
     return m_copy, tensors
 
 
+def _make_tensor_from_array(array):
+    """
+    Create a PyTorch tensor from a NumPy array, avoiding copies if possible.
+    Handles read-only Ray arrays by temporarily casting to writable view if needed.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="The given NumPy array is not writable"
+            )
+            return torch.as_tensor(array)
+    except ValueError as e:
+        # "At least one of the variables is not writeable" is the typical error
+        # when creating a tensor from a read-only numpy array
+        if "not writeable" in str(e) and not array.flags.writeable:
+            try:
+                # Create a view and try to set it writable to satisfy PyTorch.
+                # This allows zero-copy sharing from Plasma (Ray object store).
+                # The tensor should be treated as immutable!
+                view = array.view()
+                view.flags.writeable = True
+                return torch.as_tensor(view)
+            except Exception:
+                # Fallback to copy if we really can't map it (e.g. actual hardware read-only)
+                pass
+        # If it wasn't the specific writeable error, or the workaround failed, raise original
+        raise
+
+
 def replace_tensors(m: torch.nn.Module, tensors: List[Dict]):
     """
     The inverse operation of :func:`extract_tensors`. Restores the tensors that
@@ -92,11 +122,23 @@ def replace_tensors(m: torch.nn.Module, tensors: List[Dict]):
         for module, tensor_dict in zip(modules, tensors):
             # There are separate APIs to set parameters and buffers.
             for name, array in tensor_dict["params"].items():
+                try:
+                    tensor = _make_tensor_from_array(array)
+                except Exception:
+                    # Fallback to copy
+                    tensor = torch.as_tensor(array.copy())
+
                 module.register_parameter(
-                    name, torch.nn.Parameter(torch.as_tensor(array))
+                    name, torch.nn.Parameter(tensor, requires_grad=False)
                 )
             for name, array in tensor_dict["buffers"].items():
-                module.register_buffer(name, torch.as_tensor(array))
+                try:
+                    tensor = _make_tensor_from_array(array)
+                except Exception:
+                    # Fallback to copy
+                    tensor = torch.as_tensor(array.copy())
+
+                module.register_buffer(name, tensor)
 
 
 def replace_tensors_direct(m: torch.nn.Module, tensors: List[Dict]):
@@ -128,8 +170,18 @@ def replace_tensors_direct(m: torch.nn.Module, tensors: List[Dict]):
         for module, tensor_dict in zip(modules, tensors):
             # There are separate APIs to set parameters and buffers.
             for name, array in tensor_dict["params"].items():
+                try:
+                    tensor = _make_tensor_from_array(array)
+                except Exception:
+                    tensor = torch.as_tensor(array.copy())
+
                 # Super fast, somewhat risky version avoids
                 # wrapping parameters in Parameters objects.
-                module._parameters[name] = torch.as_tensor(array)
+                module._parameters[name] = tensor
             for name, array in tensor_dict["buffers"].items():
-                module.register_buffer(name, torch.as_tensor(array))
+                try:
+                    tensor = _make_tensor_from_array(array)
+                except Exception:
+                    tensor = torch.as_tensor(array.copy())
+
+                module.register_buffer(name, tensor)
