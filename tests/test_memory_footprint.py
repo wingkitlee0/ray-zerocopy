@@ -3,14 +3,15 @@ Tests to verify that memory footprint remains constant with multiple workers.
 This is the key test for zero-copy behavior.
 """
 
+import gc
+import os
+import time
+
+import psutil
 import ray
 import torch
-import psutil
-import os
-import gc
-import time
-import numpy as np
-from ray_zerocopy import ZeroCopyModel, rewrite_pipeline, extract_tensors
+
+from ray_zerocopy import ZeroCopyModel, extract_tensors, rewrite_pipeline
 
 
 def get_worker_memory_mb():
@@ -129,7 +130,7 @@ def test_memory_footprint_multiple_workers(ray_cluster):
     avg_memory_normal = sum(memories_normal) / len(memories_normal)
     total_memory_normal = sum(memories_normal)
 
-    print(f"\n=== BASELINE (Normal Loading - with copying) ===")
+    print("\n=== BASELINE (Normal Loading - with copying) ===")
     print(f"Average Worker USS: {avg_memory_normal:.2f} MB")
     print(f"Total Workers USS: {total_memory_normal:.2f} MB")
 
@@ -175,12 +176,12 @@ def test_memory_footprint_multiple_workers(ray_cluster):
     avg_memory_zerocopy = sum(memories_zerocopy) / len(memories_zerocopy)
     total_memory_zerocopy = sum(memories_zerocopy)
 
-    print(f"\n=== ZERO-COPY Loading ===")
+    print("\n=== ZERO-COPY Loading ===")
     print(f"Average Worker USS: {avg_memory_zerocopy:.2f} MB")
     print(f"Total Workers USS: {total_memory_zerocopy:.2f} MB")
 
     # ===== COMPARISON =====
-    print(f"\n=== COMPARISON ===")
+    print("\n=== COMPARISON ===")
     print(f"Memory saved per worker: {avg_memory_normal - avg_memory_zerocopy:.2f} MB")
 
     # Verify outputs match
@@ -227,9 +228,6 @@ def test_memory_footprint_sequential_calls(ray_cluster):
 
     @ray.remote
     def sequential_worker(model_ref, input_data, iterations):
-        from ray_zerocopy import ZeroCopyModel
-        import gc
-
         measurements = []
         model = ZeroCopyModel.from_object_ref(model_ref)
 

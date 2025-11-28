@@ -2,15 +2,16 @@
 Tests for the jit.rewrite module (TorchScript zero-copy functionality).
 """
 
-import io
-import torch
-import torch.nn as nn
+
 import numpy as np
 import pytest
+import torch
+import torch.nn as nn
+
 from ray_zerocopy.jit import (
     extract_tensors,
-    replace_tensors,
     extract_tensors_minimal,
+    replace_tensors,
 )
 
 
@@ -378,18 +379,18 @@ def test_pickle_serialization(simple_jit_model, tmp_path):
 
     # Save to pickle file
     pkl_file = tmp_path / "model_data.pkl"
-    with open(pkl_file, 'wb') as f:
-        pickle.dump({'model_bytes': model_bytes, 'tensors': tensors}, f)
+    with open(pkl_file, "wb") as f:
+        pickle.dump({"model_bytes": model_bytes, "tensors": tensors}, f)
 
     print(f"\nSaved to {pkl_file}")
     print(f"File size: {pkl_file.stat().st_size / 1024:.2f} KB")
 
     # Load from pickle file
-    with open(pkl_file, 'rb') as f:
+    with open(pkl_file, "rb") as f:
         loaded_data = pickle.load(f)
 
-    loaded_model_bytes = loaded_data['model_bytes']
-    loaded_tensors = loaded_data['tensors']
+    loaded_model_bytes = loaded_data["model_bytes"]
+    loaded_tensors = loaded_data["tensors"]
 
     # Verify data integrity
     assert loaded_model_bytes == model_bytes, "Model bytes don't match after pickle"
@@ -399,7 +400,7 @@ def test_pickle_serialization(simple_jit_model, tmp_path):
         np.testing.assert_array_equal(
             loaded_tensors[name],
             tensors[name],
-            err_msg=f"Tensor {name} doesn't match after pickle"
+            err_msg=f"Tensor {name} doesn't match after pickle",
         )
 
     # Restore model from pickled data
@@ -424,17 +425,17 @@ def test_pickle_large_model(large_jit_model, tmp_path):
     model_bytes, tensors = extract_tensors(model)
 
     pkl_file = tmp_path / "large_model.pkl"
-    with open(pkl_file, 'wb') as f:
-        pickle.dump({'model_bytes': model_bytes, 'tensors': tensors}, f)
+    with open(pkl_file, "wb") as f:
+        pickle.dump({"model_bytes": model_bytes, "tensors": tensors}, f)
 
     file_size_mb = pkl_file.stat().st_size / 1024 / 1024
     print(f"\nLarge model file size: {file_size_mb:.2f} MB")
 
     # Load and verify
-    with open(pkl_file, 'rb') as f:
+    with open(pkl_file, "rb") as f:
         loaded_data = pickle.load(f)
 
-    restored_model = replace_tensors(loaded_data['model_bytes'], loaded_data['tensors'])
+    restored_model = replace_tensors(loaded_data["model_bytes"], loaded_data["tensors"])
 
     with torch.no_grad():
         original_output = model(x)
@@ -457,28 +458,28 @@ def test_pickle_conv_model(conv_jit_model, tmp_path):
     model_bytes, tensors = extract_tensors(model)
 
     pkl_file = tmp_path / "conv_model.pkl"
-    with open(pkl_file, 'wb') as f:
-        pickle.dump({
-            'model_bytes': model_bytes,
-            'tensors': tensors,
-            'metadata': {
-                'num_params': len(tensors),
-                'total_size': sum(t.nbytes for t in tensors.values()),
-            }
-        }, f)
+    with open(pkl_file, "wb") as f:
+        pickle.dump(
+            {
+                "model_bytes": model_bytes,
+                "tensors": tensors,
+                "metadata": {
+                    "num_params": len(tensors),
+                    "total_size": sum(t.nbytes for t in tensors.values()),
+                },
+            },
+            f,
+        )
 
     # Load back
-    with open(pkl_file, 'rb') as f:
+    with open(pkl_file, "rb") as f:
         loaded_data = pickle.load(f)
 
     # Check metadata
-    assert loaded_data['metadata']['num_params'] == len(tensors)
+    assert loaded_data["metadata"]["num_params"] == len(tensors)
 
     # Restore and test
-    restored_model = replace_tensors(
-        loaded_data['model_bytes'],
-        loaded_data['tensors']
-    )
+    restored_model = replace_tensors(loaded_data["model_bytes"], loaded_data["tensors"])
 
     with torch.no_grad():
         restored_output = restored_model(x)

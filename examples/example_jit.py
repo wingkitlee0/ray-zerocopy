@@ -5,16 +5,9 @@ This example shows how to use the TorchScript-specific functions to achieve
 zero-copy model loading with compiled PyTorch models.
 """
 
+import ray
 import torch
 import torch.nn as nn
-import ray
-
-from ray_zerocopy.jit import (
-    extract_tensors,
-    replace_tensors,
-    rewrite_pipeline,
-    ZeroCopyModel,
-)
 
 
 # Example 1: Simple model extraction and restoration
@@ -155,7 +148,7 @@ def example_pipeline_jit():
     # Rewrite pipeline for zero-copy loading
     rewritten_pipeline = rewrite_pipeline_jit(pipeline)
 
-    print(f"Pipeline rewritten for zero-copy")
+    print("Pipeline rewritten for zero-copy")
     print(f"Model type: {type(rewritten_pipeline.model)}")
 
     # Use the rewritten pipeline (calls happen via Ray)

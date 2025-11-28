@@ -28,9 +28,9 @@ Usage:
     restored = replace_tensors(model_bytes, tensors)
 """
 
-from .rewrite import extract_tensors, replace_tensors, extract_tensors_minimal
 from .invoke import call_model, rewrite_pipeline
 from .public import ZeroCopyModel
+from .rewrite import extract_tensors, extract_tensors_minimal, replace_tensors
 
 __all__ = [
     "extract_tensors",

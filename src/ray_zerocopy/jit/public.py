@@ -19,8 +19,8 @@ from typing import Any, Protocol
 import ray
 import torch
 
-from .rewrite import replace_tensors
 from .invoke import rewrite_pipeline
+from .rewrite import replace_tensors
 
 
 class JitModelContainerProtocol(Protocol):

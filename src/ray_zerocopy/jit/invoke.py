@@ -15,8 +15,9 @@ Functions for invoking TorchScript models that have been rewritten for
 zero-copy loading.
 """
 
-from typing import Any, Set
 import copy
+from typing import Any, Set
+
 import ray
 import torch
 
@@ -50,6 +51,7 @@ def call_model(
 
     # Suppress PyTorch warnings about immutable tensors
     import warnings
+
     warnings.filterwarnings("ignore")
 
     model_bytes, model_weights = model_ref
@@ -75,10 +77,10 @@ class _RemoteModelShim:
 
     def __getattr__(self, name: str):
         if name in self._valid_methods:
+
             def _proxy(*args, **kwargs):
-                return ray.get(
-                    call_model.remote(self._model_ref, args, kwargs, name)
-                )
+                return ray.get(call_model.remote(self._model_ref, args, kwargs, name))
+
             return _proxy
         raise AttributeError(
             f"'{type(self).__name__}' object has no attribute '{name}'"
@@ -86,9 +88,7 @@ class _RemoteModelShim:
 
     def __call__(self, *args, **kwargs):
         if "__call__" in self._valid_methods:
-            return ray.get(
-                call_model.remote(self._model_ref, args, kwargs, "__call__")
-            )
+            return ray.get(call_model.remote(self._model_ref, args, kwargs, "__call__"))
         raise TypeError(f"'{type(self).__name__}' object is not callable")
 
 

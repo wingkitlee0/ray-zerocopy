@@ -18,12 +18,13 @@ weights and compiled graph, enabling zero-copy weight loading via Ray's
 shared memory while preserving the TorchScript optimizations.
 """
 
-import io
 import copy
-import torch
+import io
 import warnings
-from typing import Tuple
 from collections import OrderedDict
+from typing import Tuple
+
+import torch
 
 
 def extract_tensors(
@@ -80,9 +81,7 @@ def _make_tensor_from_array(array):
         return torch.as_tensor(array)
 
 
-def replace_tensors(
-    model_bytes: bytes, tensors: OrderedDict
-) -> torch.jit.ScriptModule:
+def replace_tensors(model_bytes: bytes, tensors: OrderedDict) -> torch.jit.ScriptModule:
     """
     Reconstruct a TorchScript model from serialized structure and weights.
 
@@ -166,8 +165,7 @@ def extract_tensors_minimal(
     except Exception as e:
         # Fall back to the regular method
         warnings.warn(
-            f"Minimal skeleton creation failed: {e}. "
-            "Falling back to extract_tensors()."
+            f"Minimal skeleton creation failed: {e}. Falling back to extract_tensors()."
         )
         # Use the regular extraction method
         return extract_tensors(m)

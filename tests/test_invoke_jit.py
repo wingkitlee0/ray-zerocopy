@@ -2,16 +2,16 @@
 Tests for the jit.invoke module (TorchScript Ray integration).
 """
 
+import pytest
+import ray
 import torch
 import torch.nn as nn
-import ray
-import pytest
+
 from ray_zerocopy.jit import (
     call_model,
-    rewrite_pipeline,
-    ZeroCopyModel,
     extract_tensors,
     replace_tensors,
+    rewrite_pipeline,
 )
 from ray_zerocopy.jit.invoke import _RemoteModelShim
 
@@ -87,6 +87,7 @@ def test_remote_jit_model_shim_call(ray_cluster, simple_jit_model):
 
 def test_remote_jit_model_shim_forward(ray_cluster):
     """Test _RemoteModelShim with forward method."""
+
     class Model(nn.Module):
         def __init__(self):
             super().__init__()
@@ -122,6 +123,7 @@ def test_remote_jit_model_shim_invalid_method(ray_cluster, simple_jit_model):
 
 def test_rewrite_pipeline_jit_basic(ray_cluster, simple_jit_model):
     """Test rewrite_pipeline with a simple pipeline."""
+
     class Pipeline:
         def __init__(self, model):
             self.model = model
@@ -146,8 +148,11 @@ def test_rewrite_pipeline_jit_basic(ray_cluster, simple_jit_model):
     torch.testing.assert_close(result, expected)
 
 
-def test_rewrite_pipeline_jit_multiple_models(ray_cluster, simple_jit_model, conv_jit_model):
+def test_rewrite_pipeline_jit_multiple_models(
+    ray_cluster, simple_jit_model, conv_jit_model
+):
     """Test rewrite_pipeline with multiple models."""
+
     class Pipeline:
         def __init__(self, model1, model2):
             self.encoder = model1
@@ -163,6 +168,7 @@ def test_rewrite_pipeline_jit_multiple_models(ray_cluster, simple_jit_model, con
 
 def test_rewrite_pipeline_jit_skip_non_jit(ray_cluster, simple_jit_model, simple_model):
     """Test that rewrite_pipeline only rewrites TorchScript models."""
+
     class Pipeline:
         def __init__(self):
             self.jit_model = simple_jit_model
@@ -179,6 +185,7 @@ def test_rewrite_pipeline_jit_skip_non_jit(ray_cluster, simple_jit_model, simple
 
 def test_rewrite_pipeline_jit_method_names(ray_cluster):
     """Test rewrite_pipeline with custom method names."""
+
     class Model(nn.Module):
         def __init__(self):
             super().__init__()
@@ -199,7 +206,9 @@ def test_rewrite_pipeline_jit_method_names(ray_cluster):
             self.model = traced
 
     original = Pipeline()
-    rewritten = rewrite_pipeline(original, method_names=("__call__", "forward", "predict"))
+    rewritten = rewrite_pipeline(
+        original, method_names=("__call__", "forward", "predict")
+    )
 
     # Test all methods work
     x = torch.randn(3, 10)
@@ -233,6 +242,7 @@ def test_parallel_inference(ray_cluster, large_jit_model):
 
 def test_rewrite_preserves_non_model_attributes(ray_cluster, simple_jit_model):
     """Test that rewrite_pipeline preserves non-model attributes."""
+
     class Pipeline:
         def __init__(self):
             self.model = simple_jit_model
@@ -251,6 +261,7 @@ def test_rewrite_preserves_non_model_attributes(ray_cluster, simple_jit_model):
 
 def test_rewrite_with_empty_pipeline(ray_cluster):
     """Test rewrite_pipeline with a pipeline that has no models."""
+
     class Pipeline:
         def __init__(self):
             self.config = {"batch_size": 32}
@@ -290,7 +301,7 @@ def test_model_ref_shared_across_tasks(ray_cluster, simple_jit_model):
     # Define a task that uses the model
     @ray.remote
     def batch_inference(model_data, batch_inputs):
-        from ray_zerocopy.jit import replace_tensors
+
         # Ray automatically dereferences ObjectRefs passed as arguments
         model_bytes, tensors = model_data
         model = replace_tensors(model_bytes, tensors)

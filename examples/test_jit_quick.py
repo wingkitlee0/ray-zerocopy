@@ -4,6 +4,7 @@ Quick test script to verify TorchScript zero-copy functionality.
 """
 
 import sys
+
 import torch
 import torch.nn as nn
 
@@ -16,8 +17,6 @@ try:
     from ray_zerocopy import (
         extract_tensors_jit,
         replace_tensors_jit,
-        ZeroCopyJitModel,
-        rewrite_pipeline_jit,
     )
 
     print("  ✓ All imports successful")
@@ -139,6 +138,7 @@ except Exception as e:
 print("\n✓ Test 5: Ray integration")
 try:
     import ray
+
     from ray_zerocopy.invoke_jit import call_jit_model
 
     if not ray.is_initialized():
