@@ -61,18 +61,8 @@ Usage Examples:
 
 from typing import Any, Optional
 
-from ray_zerocopy.nn.actors import load_pipeline_in_actor as nn_load_pipeline_in_actor
-from ray_zerocopy.nn.actors import (
-    rewrite_pipeline_for_actors as nn_rewrite_pipeline_for_actors,
-)
-from ray_zerocopy.nn.tasks import rewrite_pipeline as nn_rewrite_pipeline
-from ray_zerocopy.jit.actors import (
-    load_pipeline_in_actor as jit_load_pipeline_in_actor,
-)
-from ray_zerocopy.jit.actors import (
-    rewrite_pipeline_for_actors as jit_rewrite_for_actors,
-)
-from ray_zerocopy.jit.tasks import rewrite_pipeline as jit_rewrite_pipeline
+from ray_zerocopy import jit as rzc_jit
+from ray_zerocopy import nn as rzc_nn
 
 
 class TaskWrapper:
@@ -114,7 +104,7 @@ class TaskWrapper:
             pipeline: Object containing torch.nn.Module models as attributes
             method_names: Model methods to expose via remote tasks
         """
-        self._rewritten = nn_rewrite_pipeline(pipeline, method_names)
+        self._rewritten = rzc_nn.rewrite_pipeline(pipeline, method_names)
 
     def __getstate__(self):
         """Return state for pickling."""
@@ -178,7 +168,7 @@ class JITTaskWrapper:
             pipeline: Object containing torch.jit.ScriptModule models as attributes
             method_names: Model methods to expose via remote tasks
         """
-        self._rewritten = jit_rewrite_pipeline(pipeline, method_names)
+        self._rewritten = rzc_jit.rewrite_pipeline(pipeline, method_names)
 
     def __getstate__(self):
         """Return state for pickling."""
@@ -212,8 +202,6 @@ class ActorWrapper:
         pipeline: Object containing torch.nn.Module models as attributes
         model_attr_names: List of attribute names that are models. If None,
                          auto-discovers all torch.nn.Module attributes.
-        device: Target device for actors (e.g., "cuda:0", "cpu"). If None,
-               models stay on CPU by default.
         use_fast_load: Use faster but slightly riskier loading method.
                       Default is False.
 
@@ -229,12 +217,13 @@ class ActorWrapper:
         >>>
         >>> # Prepare pipeline for actors
         >>> pipeline = MyPipeline()
-        >>> actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+        >>> actor_wrapper = ActorWrapper(pipeline)
         >>>
         >>> # Use in Ray Data
         >>> class InferenceActor:
         ...     def __init__(self, actor_wrapper):
-        ...         self.pipeline = actor_wrapper.load()
+        ...         # Specify device at load time
+        ...         self.pipeline = actor_wrapper.load(device="cuda:0")
         ...
         ...     def __call__(self, batch):
         ...         return self.pipeline(batch["data"])
@@ -251,7 +240,6 @@ class ActorWrapper:
         self,
         pipeline: Any,
         model_attr_names: Optional[list] = None,
-        device: Optional[str] = None,
         use_fast_load: bool = False,
     ):
         """
@@ -260,13 +248,11 @@ class ActorWrapper:
         Args:
             pipeline: Object containing torch.nn.Module models
             model_attr_names: List of model attribute names (auto-detected if None)
-            device: Target device for actors (e.g., "cuda:0")
             use_fast_load: Use faster but riskier loading method
         """
-        self._skeleton, self._model_refs = nn_rewrite_pipeline_for_actors(
-            pipeline, model_attr_names, device, use_fast_load
+        self._skeleton, self._model_refs = rzc_nn.rewrite_pipeline_for_actors(
+            pipeline, model_attr_names, use_fast_load=use_fast_load
         )
-        self._device = device
         self._use_fast_load = use_fast_load
 
     def load(self, device: Optional[str] = None) -> Any:
@@ -277,8 +263,9 @@ class ActorWrapper:
         the pipeline with models loaded from the object store using zero-copy.
 
         Args:
-            device: Device to load models on (overrides constructor device if provided)
-            use_fast_load: Whether to use fast loading (overrides constructor if provided)
+            device: Device to move models to after loading (e.g., "cuda:0", "cpu").
+                   If None, no device transfer is performed (models remain on the
+                   device they were reconstructed on, typically CPU from object store).
 
         Returns:
             Pipeline object with models loaded and ready for inference
@@ -286,15 +273,17 @@ class ActorWrapper:
         Example:
             >>> class MyActor:
             ...     def __init__(self, actor_wrapper):
+            ...         # Move to GPU after loading from object store
             ...         self.pipeline = actor_wrapper.load(device="cuda:0")
             ...
             ...     def __call__(self, batch):
             ...         return self.pipeline(batch["data"])
         """
-        return nn_load_pipeline_in_actor(
+        return rzc_nn.load_pipeline_in_actor(
             self._skeleton,
             self._model_refs,
-            device=device if device is not None else self._device,
+            device=device,
+            use_fast_load=self._use_fast_load,
         )
 
     @property
@@ -306,7 +295,7 @@ class ActorWrapper:
         You can pass the individual components if needed.
 
         Returns:
-            Dictionary with pipeline_skeleton, model_refs, device, and use_fast_load
+            Dictionary with pipeline_skeleton, model_refs, and use_fast_load
 
         Example:
             >>> actor_wrapper = ActorWrapper(pipeline)
@@ -319,7 +308,6 @@ class ActorWrapper:
         return {
             "pipeline_skeleton": self._skeleton,
             "model_refs": self._model_refs,
-            "device": self._device,
             "use_fast_load": self._use_fast_load,
         }
 
@@ -339,8 +327,6 @@ class JITActorWrapper:
         pipeline: Object containing torch.jit.ScriptModule models as attributes
         model_attr_names: List of attribute names that are models. If None,
                          auto-discovers all torch.jit.ScriptModule attributes.
-        device: Target device for actors (e.g., "cuda:0", "cpu"). If None,
-               models stay on CPU by default.
 
     Example:
         >>> import torch
@@ -350,7 +336,7 @@ class JITActorWrapper:
         >>> decoder = torch.jit.trace(DecoderModel(), example_encoded)
         >>>
         >>> class MyPipeline:
-        ...     def __init__(self):
+        ...     def __init__(self, encoder, decoder):
         ...         self.encoder = encoder
         ...         self.decoder = decoder
         ...
@@ -359,13 +345,14 @@ class JITActorWrapper:
         ...         return self.decoder(encoded)
         >>>
         >>> # Prepare pipeline for actors
-        >>> pipeline = MyPipeline()
-        >>> actor_wrapper = JITActorWrapper(pipeline, device="cuda:0")
+        >>> pipeline = MyPipeline(encoder, decoder)
+        >>> actor_wrapper = JITActorWrapper(pipeline)
         >>>
         >>> # Use in Ray Data
         >>> class InferenceActor:
         ...     def __init__(self, actor_wrapper):
-        ...         self.pipeline = actor_wrapper.load()
+        ...         # Specify device at load time
+        ...         self.pipeline = actor_wrapper.load(device="cuda:0")
         ...
         ...     def __call__(self, batch):
         ...         return self.pipeline(batch["data"])
@@ -382,7 +369,6 @@ class JITActorWrapper:
         self,
         pipeline: Any,
         model_attr_names: Optional[list] = None,
-        device: Optional[str] = None,
     ):
         """
         Initialize the JITActorWrapper.
@@ -390,26 +376,22 @@ class JITActorWrapper:
         Args:
             pipeline: Object containing torch.jit.ScriptModule models
             model_attr_names: List of model attribute names (auto-detected if None)
-            device: Target device for actors (e.g., "cuda:0")
         """
-        self._skeleton, self._model_refs = jit_rewrite_for_actors(
-            pipeline, model_attr_names, device
+        self._skeleton, self._model_refs = rzc_jit.rewrite_pipeline_for_actors(
+            pipeline, model_attr_names
         )
-        self._device = device
 
     def __getstate__(self):
         """Return state for pickling."""
         return {
             "_skeleton": self._skeleton,
             "_model_refs": self._model_refs,
-            "_device": self._device,
         }
 
     def __setstate__(self, state):
         """Restore state from pickling."""
         self._skeleton = state["_skeleton"]
         self._model_refs = state["_model_refs"]
-        self._device = state["_device"]
 
     def load(self, device: Optional[str] = None) -> Any:
         """
@@ -419,7 +401,9 @@ class JITActorWrapper:
         the pipeline with TorchScript models loaded from the object store using zero-copy.
 
         Args:
-            device: Device to load models on (overrides constructor device if provided)
+            device: Device to move models to after loading (e.g., "cuda:0", "cpu").
+                   If None, no device transfer is performed (models remain on the
+                   device they were reconstructed on, typically CPU from object store).
 
         Returns:
             Pipeline object with TorchScript models loaded and ready for inference
@@ -427,16 +411,17 @@ class JITActorWrapper:
         Example:
             >>> class MyActor:
             ...     def __init__(self, actor_wrapper):
+            ...         # Move to GPU after loading from object store
             ...         self.pipeline = actor_wrapper.load(device="cuda:0")
             ...
             ...     def __call__(self, batch):
             ...         return self.pipeline(batch["data"])
         """
 
-        return jit_load_pipeline_in_actor(
+        return rzc_jit.load_pipeline_in_actor(
             self._skeleton,
             self._model_refs,
-            device=device if device is not None else self._device,
+            device=device,
         )
 
     @property
@@ -448,7 +433,7 @@ class JITActorWrapper:
         You can pass the individual components if needed.
 
         Returns:
-            Dictionary with pipeline_skeleton, model_refs, and device
+            Dictionary with pipeline_skeleton and model_refs
 
         Example:
             >>> actor_wrapper = JITActorWrapper(pipeline)
@@ -461,5 +446,4 @@ class JITActorWrapper:
         return {
             "pipeline_skeleton": self._skeleton,
             "model_refs": self._model_refs,
-            "device": self._device,
         }

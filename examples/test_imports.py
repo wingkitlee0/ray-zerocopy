@@ -5,7 +5,6 @@ print("Testing import structure...")
 
 # Test nn module
 print("\n1. Testing ray_zerocopy.nn module:")
-from ray_zerocopy.nn import replace_tensors, extract_tensors
 
 print("  ✓ NN module imports work")
 
@@ -16,8 +15,8 @@ from ray_zerocopy.jit import replace_tensors as jit_replace_tensors
 print("  ✓ JIT submodule imports work")
 
 # Test that they are different
-from ray_zerocopy.nn import extract_tensors as nn_extract
 from ray_zerocopy.jit import extract_tensors as jit_extract
+from ray_zerocopy.nn import extract_tensors as nn_extract
 
 print("\n3. Verifying they are different functions:")
 print(f"  NN extract_tensors: {nn_extract.__module__}")

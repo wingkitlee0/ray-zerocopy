@@ -138,6 +138,7 @@ except Exception as e:
 print("\n✓ Test 5: Ray integration")
 try:
     import ray
+
     from ray_zerocopy.jit import call_model
 
     if not ray.is_initialized():

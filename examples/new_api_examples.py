@@ -124,8 +124,8 @@ def example_actor_wrapper():
     # Create and wrap pipeline
     pipeline = Pipeline()
     actor_wrapper = ActorWrapper(
-        pipeline, device="cpu"
-    )  # Use "cuda:0" if GPU available
+        pipeline
+    )  # Device specified at load time, not construction
 
     # Define actor class
     class InferenceActor:
@@ -258,7 +258,7 @@ def example_jit_actor_wrapper():
     jit_pipeline = JITPipeline(jit_encoder, jit_decoder)
 
     # Wrap with JITActorWrapper
-    actor_wrapper = JITActorWrapper(jit_pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(jit_pipeline)
 
     # Define actor class
     class JITInferenceActor:

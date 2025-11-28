@@ -24,7 +24,7 @@ from typing import Any, Optional
 import ray
 import torch
 
-from .rewrite import extract_tensors, replace_tensors
+from .rewrite import extract_tensors, replace_tensors, replace_tensors_direct
 
 
 def prepare_model_for_actors(model: torch.nn.Module) -> ray.ObjectRef:
@@ -91,8 +91,6 @@ def load_model_in_actor(
 
     # Reconstruct the model
     if use_fast_load:
-        from ray_zerocopy.rewrite import replace_tensors_direct
-
         replace_tensors_direct(model_skeleton, model_weights)
     else:
         replace_tensors(model_skeleton, model_weights)
@@ -110,7 +108,6 @@ def load_model_in_actor(
 def rewrite_pipeline_for_actors(
     pipeline: Any,
     model_attr_names: Optional[list] = None,
-    device: Optional[str] = None,
     use_fast_load: bool = False,
 ) -> tuple[Any, dict[str, ray.ObjectRef]]:
     """
@@ -130,7 +127,6 @@ def rewrite_pipeline_for_actors(
     :param pipeline: Pipeline object containing PyTorch models as attributes
     :param model_attr_names: List of attribute names that are models. If None,
                              auto-discovers all torch.nn.Module attributes
-    :param device: Device to load models on in actors (e.g., "cuda:0")
     :param use_fast_load: Whether to use fast loading method
     :returns: Tuple of (pipeline_skeleton, model_refs_dict)
 

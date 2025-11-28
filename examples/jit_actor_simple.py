@@ -12,6 +12,7 @@ from ray_zerocopy import JITActorWrapper
 # Initialize Ray
 ray.init(ignore_reinit_error=True)
 
+
 # Create a simple model
 class SimpleModel(nn.Module):
     def __init__(self):
@@ -40,7 +41,7 @@ class SimplePipeline:
 pipeline = SimplePipeline(jit_model)
 
 # Create actor wrapper
-actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+actor_wrapper = JITActorWrapper(pipeline)
 
 
 # Define actor class
