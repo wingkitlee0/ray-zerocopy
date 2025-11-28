@@ -61,13 +61,15 @@ Usage Examples:
 
 from typing import Any, Optional
 
+from ray_zerocopy.actor import load_pipeline_in_actor as nn_load_pipeline_in_actor
+from ray_zerocopy.actor import (
+    rewrite_pipeline_for_actors as nn_rewrite_pipeline_for_actors,
+)
 from ray_zerocopy.invoke import rewrite_pipeline as nn_rewrite_pipeline
-from ray_zerocopy.jit.invoke import rewrite_pipeline as jit_rewrite_pipeline
-
 from ray_zerocopy.jit.actor import load_pipeline_in_actor as jit_load_pipeline_in_actor
 from ray_zerocopy.jit.actor import rewrite_pipeline_for_actors as jit_rewrite_for_actors
-from ray_zerocopy.actor import load_pipeline_in_actor as nn_load_pipeline_in_actor
-from ray_zerocopy.actor import rewrite_pipeline_for_actors as nn_rewrite_pipeline_for_actors
+from ray_zerocopy.jit.invoke import rewrite_pipeline as jit_rewrite_pipeline
+
 
 class TaskWrapper:
     """
