@@ -24,10 +24,10 @@ import numpy as np
 import psutil
 import ray
 import torch
-from common import monitor_memory_context
 from ray.data import ActorPoolStrategy
 
 from ray_zerocopy import ActorWrapper, TaskWrapper
+from ray_zerocopy.benchmark import monitor_memory_context
 
 
 def create_large_model():
