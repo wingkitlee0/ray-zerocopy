@@ -19,7 +19,7 @@ from typing import Any, Protocol
 import ray
 import torch
 
-from .invoke import rewrite_pipeline
+from .tasks import rewrite_pipeline
 from .rewrite import replace_tensors
 
 

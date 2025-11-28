@@ -61,14 +61,18 @@ Usage Examples:
 
 from typing import Any, Optional
 
-from ray_zerocopy.actor import load_pipeline_in_actor as nn_load_pipeline_in_actor
-from ray_zerocopy.actor import (
+from ray_zerocopy.nn.actors import load_pipeline_in_actor as nn_load_pipeline_in_actor
+from ray_zerocopy.nn.actors import (
     rewrite_pipeline_for_actors as nn_rewrite_pipeline_for_actors,
 )
-from ray_zerocopy.invoke import rewrite_pipeline as nn_rewrite_pipeline
-from ray_zerocopy.jit.actor import load_pipeline_in_actor as jit_load_pipeline_in_actor
-from ray_zerocopy.jit.actor import rewrite_pipeline_for_actors as jit_rewrite_for_actors
-from ray_zerocopy.jit.invoke import rewrite_pipeline as jit_rewrite_pipeline
+from ray_zerocopy.nn.tasks import rewrite_pipeline as nn_rewrite_pipeline
+from ray_zerocopy.jit.actors import (
+    load_pipeline_in_actor as jit_load_pipeline_in_actor,
+)
+from ray_zerocopy.jit.actors import (
+    rewrite_pipeline_for_actors as jit_rewrite_for_actors,
+)
+from ray_zerocopy.jit.tasks import rewrite_pipeline as jit_rewrite_pipeline
 
 
 class TaskWrapper:
@@ -392,6 +396,20 @@ class JITActorWrapper:
             pipeline, model_attr_names, device
         )
         self._device = device
+
+    def __getstate__(self):
+        """Return state for pickling."""
+        return {
+            "_skeleton": self._skeleton,
+            "_model_refs": self._model_refs,
+            "_device": self._device,
+        }
+
+    def __setstate__(self, state):
+        """Restore state from pickling."""
+        self._skeleton = state["_skeleton"]
+        self._model_refs = state["_model_refs"]
+        self._device = state["_device"]
 
     def load(self, device: Optional[str] = None) -> Any:
         """

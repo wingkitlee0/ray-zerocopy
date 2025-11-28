@@ -24,7 +24,7 @@ from typing import Any, Set
 import ray
 import torch
 
-from ray_zerocopy.rewrite import extract_tensors, replace_tensors
+from .rewrite import extract_tensors, replace_tensors
 
 
 @ray.remote

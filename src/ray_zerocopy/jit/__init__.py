@@ -28,17 +28,29 @@ Usage:
     restored = replace_tensors(model_bytes, tensors)
 """
 
-from . import actor
-from .invoke import call_model, rewrite_pipeline
-from .public import ZeroCopyModel
+from .actors import (
+    load_jit_model_in_actor,
+    load_pipeline_in_actor,
+    prepare_jit_model_for_actors,
+    rewrite_pipeline_for_actors,
+)
 from .rewrite import extract_tensors, extract_tensors_minimal, replace_tensors
+from .tasks import call_model, rewrite_pipeline
+from .utils import ZeroCopyModel
 
 __all__ = [
+    # Actor-based functions
+    "prepare_jit_model_for_actors",
+    "load_jit_model_in_actor",
+    "rewrite_pipeline_for_actors",
+    "load_pipeline_in_actor",
+    # Task-based functions
+    "rewrite_pipeline",
+    "call_model",
+    # Core rewrite functions
     "extract_tensors",
     "replace_tensors",
     "extract_tensors_minimal",
-    "call_model",
-    "rewrite_pipeline",
+    # Utility classes
     "ZeroCopyModel",
-    "actor",
 ]

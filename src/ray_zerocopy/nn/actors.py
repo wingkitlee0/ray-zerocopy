@@ -24,7 +24,7 @@ from typing import Any, Optional
 import ray
 import torch
 
-from ray_zerocopy.rewrite import extract_tensors, replace_tensors
+from .rewrite import extract_tensors, replace_tensors
 
 
 def prepare_model_for_actors(model: torch.nn.Module) -> ray.ObjectRef:

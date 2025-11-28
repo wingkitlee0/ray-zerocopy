@@ -11,7 +11,7 @@ import psutil
 import ray
 import torch
 
-from ray_zerocopy import ZeroCopyModel, extract_tensors, rewrite_pipeline
+from ray_zerocopy.nn import ZeroCopyModel, extract_tensors, rewrite_pipeline
 
 
 def get_worker_memory_mb():
@@ -150,7 +150,7 @@ def test_memory_footprint_multiple_workers(ray_cluster):
     @ray.remote
     def worker_task_zerocopy(model_ref, input_data):
         """Worker task that loads and uses the model with zero-copy."""
-        from ray_zerocopy import ZeroCopyModel
+        from ray_zerocopy.nn import ZeroCopyModel
 
         model = ZeroCopyModel.from_object_ref(model_ref)
         with torch.no_grad():

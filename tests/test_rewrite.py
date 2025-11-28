@@ -5,11 +5,8 @@ Tests for the rewrite module (extract_tensors and replace_tensors).
 import numpy as np
 import torch
 
-from ray_zerocopy.rewrite import (
-    extract_tensors,
-    replace_tensors,
-    replace_tensors_direct,
-)
+from ray_zerocopy.nn import extract_tensors, replace_tensors
+from ray_zerocopy.nn.rewrite import replace_tensors_direct  # Private function
 
 
 def test_extract_tensors_basic(simple_model):
