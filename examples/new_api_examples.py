@@ -124,8 +124,8 @@ def example_actor_wrapper():
     # Create and wrap pipeline
     pipeline = Pipeline()
     actor_wrapper = ActorWrapper(
-        pipeline, device="cpu"
-    )  # Use "cuda:0" if GPU available
+        pipeline
+    )  # Device specified at load time, not construction
 
     # Define actor class
     class InferenceActor:
@@ -135,7 +135,10 @@ def example_actor_wrapper():
 
         def __call__(self, batch):
             # Process batch through pipeline
-            return {"predictions": self.pipeline(batch["data"])}
+            # Ray Data passes numpy arrays, convert to tensor
+
+            data = torch.tensor(batch["data"], dtype=torch.float32)
+            return {"predictions": self.pipeline(data)}
 
     # Create synthetic dataset
     def generate_data(batch):
@@ -186,17 +189,17 @@ def example_jit_task_wrapper():
     example_encoded = jit_encoder(example_input)
     jit_decoder = torch.jit.trace(pipeline.decoder, example_encoded)
 
-    # Create JIT pipeline
+    # Create JIT pipeline - pass models as constructor arguments
     class JITPipeline:
-        def __init__(self):
-            self.encoder = jit_encoder
-            self.decoder = jit_decoder
+        def __init__(self, encoder, decoder):
+            self.encoder = encoder
+            self.decoder = decoder
 
         def __call__(self, data):
             encoded = self.encoder(data)
             return self.decoder(encoded)
 
-    jit_pipeline = JITPipeline()
+    jit_pipeline = JITPipeline(jit_encoder, jit_decoder)
 
     # Wrap with JITTaskWrapper
     wrapped = JITTaskWrapper(jit_pipeline)
@@ -242,20 +245,20 @@ def example_jit_actor_wrapper():
     example_encoded = jit_encoder(example_input)
     jit_decoder = torch.jit.trace(pipeline.decoder, example_encoded)
 
-    # Create JIT pipeline
+    # Create JIT pipeline - pass models as constructor arguments to avoid closure issues
     class JITPipeline:
-        def __init__(self):
-            self.encoder = jit_encoder
-            self.decoder = jit_decoder
+        def __init__(self, encoder, decoder):
+            self.encoder = encoder
+            self.decoder = decoder
 
         def __call__(self, data):
             encoded = self.encoder(data)
             return self.decoder(encoded)
 
-    jit_pipeline = JITPipeline()
+    jit_pipeline = JITPipeline(jit_encoder, jit_decoder)
 
     # Wrap with JITActorWrapper
-    actor_wrapper = JITActorWrapper(jit_pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(jit_pipeline)
 
     # Define actor class
     class JITInferenceActor:
@@ -265,7 +268,11 @@ def example_jit_actor_wrapper():
 
         def __call__(self, batch):
             # Process batch through JIT pipeline
-            return {"predictions": self.pipeline(batch["data"])}
+            # Ray Data passes numpy arrays, convert to tensor
+            data = torch.tensor(batch["data"], dtype=torch.float32)
+            with torch.no_grad():
+                result = self.pipeline(data)
+                return {"predictions": result.detach().numpy()}
 
     # Create synthetic dataset
     def generate_data(batch):
@@ -302,8 +309,8 @@ def comparison_old_vs_new():
 
     pipeline = Pipeline()
 
-    print("\n--- OLD API (deprecated) ---")
-    print("from ray_zerocopy import rewrite_pipeline")
+    print("\n--- OLD API (low-level) ---")
+    print("from ray_zerocopy.nn import rewrite_pipeline")
     print("rewritten = rewrite_pipeline(pipeline)")
 
     print("\n--- NEW API (recommended) ---")
@@ -335,7 +342,6 @@ def main():
     print("All examples completed successfully!")
     print("=" * 70)
     print("\nFor more details, see:")
-    print("- Migration guide: docs/migration_guide.md")
     print("- API documentation: help(ray_zerocopy.TaskWrapper)")
     print("=" * 70)
 

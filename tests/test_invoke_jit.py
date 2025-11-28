@@ -13,7 +13,7 @@ from ray_zerocopy.jit import (
     replace_tensors,
     rewrite_pipeline,
 )
-from ray_zerocopy.jit.invoke import _RemoteModelShim
+from ray_zerocopy.jit.tasks import _RemoteModelShim  # Private function for testing
 
 
 def test_call_jit_model_basic(ray_cluster, simple_jit_model):

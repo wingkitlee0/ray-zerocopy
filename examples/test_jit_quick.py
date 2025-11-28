@@ -14,9 +14,9 @@ print("=" * 60)
 # Test 1: Basic import
 print("\n✓ Test 1: Import modules")
 try:
-    from ray_zerocopy import (
-        extract_tensors_jit,
-        replace_tensors_jit,
+    from ray_zerocopy.jit import (
+        extract_tensors,
+        replace_tensors,
     )
 
     print("  ✓ All imports successful")
@@ -45,12 +45,12 @@ try:
         original_output = jit_model(test_input)
 
     # Extract tensors
-    model_bytes, tensors = extract_tensors_jit(jit_model)
+    model_bytes, tensors = extract_tensors(jit_model)
     print(f"  ✓ Extracted {len(tensors)} tensors")
     print(f"  ✓ Model skeleton size: {len(model_bytes):,} bytes")
 
     # Replace tensors
-    restored_model = replace_tensors_jit(model_bytes, tensors)
+    restored_model = replace_tensors(model_bytes, tensors)
     with torch.no_grad():
         restored_output = restored_model(test_input)
 
@@ -72,7 +72,7 @@ print("\n✓ Test 3: Type checking")
 try:
     regular_model = nn.Linear(10, 5)
     try:
-        extract_tensors_jit(regular_model)
+        extract_tensors(regular_model)
         print("  ✗ Should have raised TypeError")
         sys.exit(1)
     except TypeError as e:
@@ -110,7 +110,7 @@ try:
     with torch.no_grad():
         original = jit_model(x)
 
-    model_bytes, tensors = extract_tensors_jit(jit_model)
+    model_bytes, tensors = extract_tensors(jit_model)
 
     # Check for buffers
     buffer_count = sum(
@@ -118,7 +118,7 @@ try:
     )
     print(f"  ✓ Found {buffer_count} buffer tensors")
 
-    restored = replace_tensors_jit(model_bytes, tensors)
+    restored = replace_tensors(model_bytes, tensors)
     with torch.no_grad():
         restored_out = restored(x)
 
@@ -138,7 +138,8 @@ except Exception as e:
 print("\n✓ Test 5: Ray integration")
 try:
     import ray
-    from ray_zerocopy.invoke_jit import call_jit_model
+
+    from ray_zerocopy.jit import call_model
 
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True)
@@ -150,12 +151,12 @@ try:
     jit_model = torch.jit.trace(model, example)
 
     # Put in Ray object store
-    model_data = extract_tensors_jit(jit_model)
+    model_data = extract_tensors(jit_model)
     model_ref = ray.put(model_data)
 
     # Call via Ray
     test_input = torch.randn(2, 10)
-    result_ref = call_jit_model.remote(model_ref, args=(test_input,))
+    result_ref = call_model.remote(model_ref, args=(test_input,))
     result = ray.get(result_ref)
 
     # Compare with direct call

@@ -97,10 +97,10 @@ def test_task_wrapper_multi_model():
 def test_actor_wrapper_basic():
     """Test basic ActorWrapper functionality."""
     pipeline = SimplePipeline()
-    actor_wrapper = ActorWrapper(pipeline, device="cpu")
+    actor_wrapper = ActorWrapper(pipeline)
 
     # Load in current process (simulating actor)
-    loaded_pipeline = actor_wrapper.load()
+    loaded_pipeline = actor_wrapper.load(device="cpu")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -113,10 +113,10 @@ def test_actor_wrapper_basic():
 def test_actor_wrapper_multi_model():
     """Test ActorWrapper with multiple models."""
     pipeline = MultiModelPipeline()
-    actor_wrapper = ActorWrapper(pipeline, device="cpu")
+    actor_wrapper = ActorWrapper(pipeline)
 
     # Load in current process
-    loaded_pipeline = actor_wrapper.load()
+    loaded_pipeline = actor_wrapper.load(device="cpu")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -128,24 +128,22 @@ def test_actor_wrapper_multi_model():
 def test_actor_wrapper_constructor_kwargs():
     """Test ActorWrapper.constructor_kwargs property."""
     pipeline = SimplePipeline()
-    actor_wrapper = ActorWrapper(pipeline, device="cpu", use_fast_load=False)
+    actor_wrapper = ActorWrapper(pipeline, use_fast_load=False)
 
     kwargs = actor_wrapper.constructor_kwargs
 
     assert "pipeline_skeleton" in kwargs
     assert "model_refs" in kwargs
-    assert "device" in kwargs
     assert "use_fast_load" in kwargs
-    assert kwargs["device"] == "cpu"
     assert kwargs["use_fast_load"] is False
 
 
 def test_actor_wrapper_device_override():
-    """Test ActorWrapper with device override in load()."""
+    """Test ActorWrapper with device specification in load()."""
     pipeline = SimplePipeline()
-    actor_wrapper = ActorWrapper(pipeline, device="cpu")
+    actor_wrapper = ActorWrapper(pipeline)
 
-    # Load with device override (still cpu since we're testing)
+    # Load with device specification
     loaded_pipeline = actor_wrapper.load(device="cpu")
 
     test_input = torch.randn(3, 10)
@@ -268,10 +266,10 @@ def test_jit_actor_wrapper_basic():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Load in current process (simulating actor)
-    loaded_pipeline = actor_wrapper.load()
+    loaded_pipeline = actor_wrapper.load(device="cpu")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -304,10 +302,10 @@ def test_jit_actor_wrapper_multi_model():
             return self.decoder(encoded)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Load in current process
-    loaded_pipeline = actor_wrapper.load()
+    loaded_pipeline = actor_wrapper.load(device="cpu")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -331,18 +329,16 @@ def test_jit_actor_wrapper_constructor_kwargs():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     kwargs = actor_wrapper.constructor_kwargs
 
     assert "pipeline_skeleton" in kwargs
     assert "model_refs" in kwargs
-    assert "device" in kwargs
-    assert kwargs["device"] == "cpu"
 
 
 def test_jit_actor_wrapper_device_override():
-    """Test JITActorWrapper with device override in load()."""
+    """Test JITActorWrapper with device specification in load()."""
     model = SimpleModel()
     model.eval()
     example_input = torch.randn(1, 10)
@@ -356,9 +352,9 @@ def test_jit_actor_wrapper_device_override():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
-    # Load with device override
+    # Load with device specification
     loaded_pipeline = actor_wrapper.load(device="cpu")
 
     test_input = torch.randn(3, 10)
@@ -393,9 +389,9 @@ def test_wrapper_api_consistency():
 
     # All wrappers should accept similar constructor args
     task_wrapper = TaskWrapper(nn_pipeline)
-    actor_wrapper = ActorWrapper(nn_pipeline, device="cpu")
+    actor_wrapper = ActorWrapper(nn_pipeline)
     jit_task_wrapper = JITTaskWrapper(jit_pipeline)
-    jit_actor_wrapper = JITActorWrapper(jit_pipeline, device="cpu")
+    jit_actor_wrapper = JITActorWrapper(jit_pipeline)
 
     # Actor wrappers should have load() method
     assert hasattr(actor_wrapper, "load")
@@ -422,8 +418,8 @@ def test_wrapper_determinism():
     assert torch.allclose(original_output, wrapped_output, rtol=1e-4)
 
     # Test ActorWrapper
-    actor_wrapper = ActorWrapper(pipeline, device="cpu")
-    loaded = actor_wrapper.load()
+    actor_wrapper = ActorWrapper(pipeline)
+    loaded = actor_wrapper.load(device="cpu")
     with torch.no_grad():
         actor_output = loaded(test_input)
     assert torch.allclose(original_output, actor_output, rtol=1e-4)

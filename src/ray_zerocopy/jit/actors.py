@@ -119,7 +119,6 @@ def load_jit_model_in_actor(
 def rewrite_pipeline_for_actors(
     pipeline: Any,
     model_attr_names: Optional[list] = None,
-    device: Optional[str] = None,
 ) -> tuple[Any, dict[str, ray.ObjectRef]]:
     """
     Prepare a pipeline object with TorchScript models for use in Ray actors.

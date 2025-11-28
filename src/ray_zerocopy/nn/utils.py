@@ -3,7 +3,7 @@ from typing import Any, Protocol
 import ray
 import torch
 
-from ray_zerocopy.invoke import replace_tensors, rewrite_pipeline
+from .tasks import replace_tensors, rewrite_pipeline
 
 
 class ModelContainerProtocol(Protocol):
