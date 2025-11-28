@@ -31,6 +31,9 @@ def prepare_model_for_actors(model: torch.nn.Module) -> ray.ObjectRef:
     """
     Prepare a PyTorch model for zero-copy loading across multiple Ray actors.
 
+    This is a low-level API. For most use cases, consider using
+    :class:`ray_zerocopy.ActorWrapper` for a higher-level interface.
+
     This function extracts the model weights and stores them in Ray's object store,
     enabling multiple actors to load the same model without duplicating memory.
 
@@ -113,6 +116,9 @@ def rewrite_pipeline_for_actors(
     """
     Prepare a pipeline object with PyTorch models for use in Ray actors.
 
+    This is a low-level API. For most use cases, consider using
+    :class:`ray_zerocopy.ActorWrapper` for a higher-level interface.
+
     This function extracts all PyTorch models from a pipeline object and stores
     them in Ray's object store. It returns a factory function that can reconstruct
     the pipeline with loaded models inside each actor.
@@ -178,7 +184,8 @@ def rewrite_pipeline_for_actors(
     for attr_name in model_attr_names:
         model = getattr(pipeline, attr_name)
         if isinstance(model, torch.nn.Module):
-            model_refs[attr_name] = prepare_model_for_actors(model)
+            # Directly store extracted tensors in object store (no extra layer)
+            model_refs[attr_name] = ray.put(extract_tensors(model))
             # Set the attribute to None in skeleton to save memory
             setattr(pipeline_skeleton, attr_name, None)
 
@@ -223,21 +230,3 @@ def load_pipeline_in_actor(
         setattr(pipeline, attr_name, model)
 
     return pipeline
-
-
-# Note: No factory function needed!
-# Just define your actor class and use fn_constructor_kwargs in map_batches.
-# Example:
-#
-# class MyActor:
-#     def __init__(self, model_ref, device="cuda:0"):
-#         self.model = load_model_in_actor(model_ref, device=device)
-#
-#     def __call__(self, batch):
-#         return self.model(batch["data"])
-#
-# ds.map_batches(
-#     MyActor,
-#     fn_constructor_kwargs={"model_ref": model_ref, "device": "cuda:0"},
-#     compute=ActorPoolStrategy(size=4)
-# )

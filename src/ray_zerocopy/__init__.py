@@ -7,15 +7,21 @@ from .actor import (
 from .invoke import call_model, rewrite_pipeline
 from .public import ZeroCopyModel
 from .rewrite import extract_tensors, replace_tensors
+from .wrappers import ActorWrapper, JITActorWrapper, JITTaskWrapper, TaskWrapper
 
 __all__ = [
-    # Original task-based functions
+    # New unified wrapper API (recommended)
+    "TaskWrapper",
+    "ActorWrapper",
+    "JITTaskWrapper",
+    "JITActorWrapper",
+    # Original task-based functions (deprecated)
     "rewrite_pipeline",
     "call_model",
     "extract_tensors",
     "replace_tensors",
     "ZeroCopyModel",
-    # New actor-based functions
+    # Actor-based functions (deprecated)
     "prepare_model_for_actors",
     "load_model_in_actor",
     "rewrite_pipeline_for_actors",

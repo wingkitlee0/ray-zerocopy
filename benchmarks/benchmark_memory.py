@@ -8,9 +8,7 @@ import psutil
 import ray
 import torch
 
-from ray_zerocopy import (
-    ZeroCopyModel,
-)
+from ray_zerocopy import TaskWrapper
 
 
 def create_large_model():
@@ -131,18 +129,17 @@ def worker_task_normal(model_copy, sleep_time):
 
 
 @ray.remote
-def worker_task_zerocopy(model_ref, sleep_time):
-    """Worker task that loads and uses the model with zero-copy."""
+def worker_task_zerocopy(wrapped_pipeline, sleep_time):
+    """Worker task that uses the zero-copy wrapped pipeline."""
     pid = os.getpid()
     print(f"Worker (ZeroCopy) {pid} started. Mapping memory...")
 
     # Ensure we force garbage collection BEFORE measuring or doing anything else
     gc.collect()
 
-    model = ZeroCopyModel.from_object_ref(model_ref)
-
+    # Use the wrapped pipeline - model loading happens automatically with zero-copy
     with torch.no_grad():
-        _ = model(torch.randn(1, 5000))
+        _ = wrapped_pipeline(torch.randn(1, 5000))
 
     # Force GC to stabilize memory reading
     gc.collect()
@@ -205,17 +202,19 @@ def main():
     start_time = time.time()
 
     if args.zerocopy:
-        # Zero-copy path
+        # Zero-copy path using TaskWrapper
         class Pipeline:
             def __init__(self, model):
                 self.model = model
 
+            def __call__(self, x):
+                return self.model(x)
+
         pipeline = Pipeline(model)
-        rewritten = ZeroCopyModel.rewrite(pipeline)
-        model_ref = ZeroCopyModel.to_object_ref(rewritten.model)  # type: ignore
+        wrapped = TaskWrapper(pipeline)
 
         futures = [
-            worker_task_zerocopy.remote(model_ref, args.duration)
+            worker_task_zerocopy.remote(wrapped, args.duration)
             for _ in range(args.workers)
         ]
     else:

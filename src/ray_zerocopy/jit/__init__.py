@@ -28,6 +28,7 @@ Usage:
     restored = replace_tensors(model_bytes, tensors)
 """
 
+from . import actor
 from .invoke import call_model, rewrite_pipeline
 from .public import ZeroCopyModel
 from .rewrite import extract_tensors, extract_tensors_minimal, replace_tensors
@@ -39,4 +40,5 @@ __all__ = [
     "call_model",
     "rewrite_pipeline",
     "ZeroCopyModel",
+    "actor",
 ]
