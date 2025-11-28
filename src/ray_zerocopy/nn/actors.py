@@ -19,12 +19,14 @@ with Ray Data map_batches and ActorPoolStrategy.
 
 import copy
 import warnings
-from typing import Any, Optional
+from typing import Any, Optional, TypeVar
 
 import ray
 import torch
 
 from .rewrite import extract_tensors, replace_tensors, replace_tensors_direct
+
+T = TypeVar("T")
 
 
 def prepare_model_for_actors(model: torch.nn.Module) -> ray.ObjectRef:
@@ -189,11 +191,11 @@ def rewrite_pipeline_for_actors(
 
 
 def load_pipeline_in_actor(
-    pipeline_skeleton: Any,
+    pipeline_skeleton: T,
     model_refs: dict[str, ray.ObjectRef],
     device: Optional[str] = None,
     use_fast_load: bool = False,
-) -> Any:
+) -> T:
     """
     Reconstruct a pipeline with its models inside a Ray actor.
 

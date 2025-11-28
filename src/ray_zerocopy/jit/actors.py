@@ -19,12 +19,14 @@ ray_zerocopy.actor but specifically for torch.jit.ScriptModule models.
 
 import copy
 import warnings
-from typing import Any, Optional
+from typing import Optional, TypeVar
 
 import ray
 import torch
 
 from .rewrite import extract_tensors, replace_tensors
+
+T = TypeVar("T")
 
 
 def prepare_jit_model_for_actors(jit_model: torch.jit.ScriptModule) -> ray.ObjectRef:
@@ -117,9 +119,9 @@ def load_jit_model_in_actor(
 
 
 def rewrite_pipeline_for_actors(
-    pipeline: Any,
+    pipeline: T,
     model_attr_names: Optional[list] = None,
-) -> tuple[Any, dict[str, ray.ObjectRef]]:
+) -> tuple[T, dict[str, ray.ObjectRef]]:
     """
     Prepare a pipeline object with TorchScript models for use in Ray actors.
 
@@ -204,10 +206,10 @@ def rewrite_pipeline_for_actors(
 
 
 def load_pipeline_in_actor(
-    pipeline_skeleton: Any,
+    pipeline_skeleton: T,
     model_refs: dict[str, ray.ObjectRef],
     device: Optional[str] = None,
-) -> Any:
+) -> T:
     """
     Reconstruct a pipeline with TorchScript models inside a Ray actor.
 

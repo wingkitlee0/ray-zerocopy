@@ -4,14 +4,22 @@ Comprehensive examples demonstrating the new unified wrapper API.
 This file shows all four wrapper classes side-by-side with realistic examples.
 """
 
+from typing import Generic, TypeVar
+
+import numpy as np
 import ray
 import torch
 import torch.nn as nn
 from ray.data import ActorPoolStrategy
 
-# Initialize Ray (if not already initialized)
-if not ray.is_initialized():
-    ray.init()
+from ray_zerocopy import (
+    ActorWrapper,
+    JITActorWrapper,
+    JITTaskWrapper,
+    TaskWrapper,
+)
+
+T = TypeVar("T")
 
 
 # ============================================================================
@@ -80,8 +88,6 @@ def example_task_wrapper():
     print("Example 1: TaskWrapper (nn.Module + Ray Tasks)")
     print("=" * 70)
 
-    from ray_zerocopy import TaskWrapper
-
     # Create and wrap pipeline
     pipeline = Pipeline()
     wrapped = TaskWrapper(pipeline)
@@ -119,17 +125,13 @@ def example_actor_wrapper():
     print("Example 2: ActorWrapper (nn.Module + Ray Actors)")
     print("=" * 70)
 
-    from ray_zerocopy import ActorWrapper
-
     # Create and wrap pipeline
     pipeline = Pipeline()
-    actor_wrapper = ActorWrapper(
-        pipeline
-    )  # Device specified at load time, not construction
+    actor_wrapper = ActorWrapper(pipeline)
 
     # Define actor class
-    class InferenceActor:
-        def __init__(self, actor_wrapper):
+    class InferenceActor(Generic[T]):
+        def __init__(self, actor_wrapper: ActorWrapper[T]):
             # Load pipeline inside actor
             self.pipeline = actor_wrapper.load()
 
@@ -137,8 +139,9 @@ def example_actor_wrapper():
             # Process batch through pipeline
             # Ray Data passes numpy arrays, convert to tensor
 
-            data = torch.tensor(batch["data"], dtype=torch.float32)
-            return {"predictions": self.pipeline(data)}
+            with torch.no_grad():
+                data = torch.tensor(batch["data"], dtype=torch.float32)
+                return {"predictions": self.pipeline(data)}
 
     # Create synthetic dataset
     def generate_data(batch):
@@ -176,8 +179,6 @@ def example_jit_task_wrapper():
     print("\n" + "=" * 70)
     print("Example 3: JITTaskWrapper (TorchScript + Ray Tasks)")
     print("=" * 70)
-
-    from ray_zerocopy import JITTaskWrapper
 
     # Create pipeline and trace it
     pipeline = Pipeline()
@@ -233,8 +234,6 @@ def example_jit_actor_wrapper():
     print("Example 4: JITActorWrapper (TorchScript + Ray Actors) - NEW!")
     print("=" * 70)
 
-    from ray_zerocopy import JITActorWrapper
-
     # Create pipeline and trace it
     pipeline = Pipeline()
 
@@ -244,6 +243,23 @@ def example_jit_actor_wrapper():
 
     example_encoded = jit_encoder(example_input)
     jit_decoder = torch.jit.trace(pipeline.decoder, example_encoded)
+
+    # IMPORTANT: Save and reload traced models to break references to original Python classes
+    # This is necessary for serialization in Ray Data
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        encoder_path = os.path.join(tmpdir, "encoder.pt")
+        decoder_path = os.path.join(tmpdir, "decoder.pt")
+
+        # Save traced models
+        torch.jit.save(jit_encoder, encoder_path)
+        torch.jit.save(jit_decoder, decoder_path)
+
+        # Reload to break Python class references
+        jit_encoder = torch.jit.load(encoder_path)
+        jit_decoder = torch.jit.load(decoder_path)
 
     # Create JIT pipeline - pass models as constructor arguments to avoid closure issues
     class JITPipeline:
@@ -261,12 +277,12 @@ def example_jit_actor_wrapper():
     actor_wrapper = JITActorWrapper(jit_pipeline)
 
     # Define actor class
-    class JITInferenceActor:
-        def __init__(self, actor_wrapper):
+    class JITInferenceActor(Generic[T]):
+        def __init__(self, actor_wrapper: JITActorWrapper[T]):
             # Load JIT pipeline inside actor
             self.pipeline = actor_wrapper.load()
 
-        def __call__(self, batch):
+        def __call__(self, batch: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
             # Process batch through JIT pipeline
             # Ray Data passes numpy arrays, convert to tensor
             data = torch.tensor(batch["data"], dtype=torch.float32)
@@ -321,6 +337,42 @@ def comparison_old_vs_new():
 
 
 # ============================================================================
+# Example: Metadata Preservation
+# ============================================================================
+
+
+def example_metadata_preservation():
+    """
+    Demonstrate that wrappers preserve docstrings and metadata.
+
+    All wrapper classes now preserve the original pipeline's docstring
+    and type hints, making the API more discoverable via help() and IDEs.
+    """
+    print("\n" + "=" * 70)
+    print("Example: Metadata Preservation")
+    print("=" * 70)
+
+    # Create pipeline with docstring
+    pipeline = Pipeline()
+    wrapped = TaskWrapper(pipeline)
+
+    print("\nOriginal Pipeline class docstring:")
+    print(f"  '{pipeline.__class__.__doc__}'")
+
+    print("\nWrapped object preserves original docstring:")
+    print(f"  Contains original: {pipeline.__class__.__doc__ in wrapped.__doc__}")
+
+    print("\nWrapped object has __wrapped__ attribute (Python convention):")
+    print(f"  hasattr(wrapped, '__wrapped__'): {hasattr(wrapped, '__wrapped__')}")
+    print(f"  wrapped.__wrapped__ is pipeline: {wrapped.__wrapped__ is pipeline}")
+
+    print("\nThis makes help() and IDE autocomplete more useful!")
+    print("  Try: help(wrapped)")
+
+    print("\n✓ Wrappers preserve metadata for better discoverability")
+
+
+# ============================================================================
 # Main: Run all examples
 # ============================================================================
 
@@ -337,12 +389,14 @@ def main():
     example_jit_task_wrapper()
     example_jit_actor_wrapper()
     comparison_old_vs_new()
+    example_metadata_preservation()
 
     print("\n" + "=" * 70)
     print("All examples completed successfully!")
     print("=" * 70)
     print("\nFor more details, see:")
     print("- API documentation: help(ray_zerocopy.TaskWrapper)")
+    print("- Metadata is preserved from wrapped classes!")
     print("=" * 70)
 
 
