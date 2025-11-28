@@ -1,8 +1,10 @@
 """
 Example: Using zero-copy model loading with Ray Data actors
 
-This example demonstrates how to use the actor-based zero-copy loading
-for efficient model inference with Ray Data's map_batches and ActorPoolStrategy.
+This example demonstrates how to use the NEW ActorWrapper API for
+efficient model inference with Ray Data's map_batches and ActorPoolStrategy.
+
+For the OLD API examples (deprecated), see ray_data_actor_example_old.py
 """
 
 import numpy as np
@@ -10,33 +12,34 @@ import ray
 import torch
 from ray.data import ActorPoolStrategy
 
-from ray_zerocopy.actor import (
-    load_model_in_actor,
-    load_pipeline_in_actor,
-    prepare_model_for_actors,
-    rewrite_pipeline_for_actors,
-)
+from ray_zerocopy import ActorWrapper
 
 
 # Example 1: Simple model with manual actor class
 def example_simple_model():
-    """Example using a simple model with manual actor implementation."""
+    """Example using a simple model with NEW ActorWrapper API."""
 
-    # Create a simple model
-    model = torch.nn.Sequential(
-        torch.nn.Linear(100, 256),
-        torch.nn.ReLU(),
-        torch.nn.Linear(256, 10),
-    )
+    # Create a simple pipeline (wrapper around model)
+    class SimplePipeline:
+        def __init__(self):
+            self.model = torch.nn.Sequential(
+                torch.nn.Linear(100, 256),
+                torch.nn.ReLU(),
+                torch.nn.Linear(256, 10),
+            )
 
-    # Prepare model for actors (stores in Ray object store)
-    model_ref = prepare_model_for_actors(model)
+        def __call__(self, inputs):
+            return self.model(inputs)
 
-    # Define actor class
+    # Create and wrap pipeline for actors
+    pipeline = SimplePipeline()
+    actor_wrapper = ActorWrapper(pipeline, device="cpu")
+
+    # Define actor class - much simpler now!
     class InferenceActor:
-        def __init__(self, model_ref):
-            # Load model from object store (zero-copy)
-            self.model = load_model_in_actor(model_ref, device="cpu")
+        def __init__(self, actor_wrapper):
+            # Load pipeline from wrapper (zero-copy)
+            self.pipeline = actor_wrapper.load()
 
         def __call__(self, batch):
             # Convert batch to tensor
@@ -44,7 +47,7 @@ def example_simple_model():
 
             # Run inference
             with torch.no_grad():
-                outputs = self.model(inputs)
+                outputs = self.pipeline(inputs)
 
             # Return results
             return {"predictions": outputs.numpy()}
@@ -57,7 +60,7 @@ def example_simple_model():
     # Run inference using actor pool (4 actors share the same model via zero-copy)
     results = ds.map_batches(
         InferenceActor,
-        fn_constructor_kwargs={"model_ref": model_ref},
+        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=4),
     )
@@ -73,7 +76,7 @@ def example_simple_model():
 
 # Example 2: Pipeline with multiple models
 def example_pipeline():
-    """Example using a pipeline with multiple models."""
+    """Example using a pipeline with multiple models - NEW API is simpler!"""
 
     class EncoderDecoderPipeline:
         def __init__(self):
@@ -93,16 +96,14 @@ def example_pipeline():
     # Create pipeline
     pipeline = EncoderDecoderPipeline()
 
-    # Prepare pipeline for actors
-    pipeline_skeleton, model_refs = rewrite_pipeline_for_actors(pipeline)
+    # Wrap for actors - single line!
+    actor_wrapper = ActorWrapper(pipeline, device="cpu")
 
-    # Define actor class
+    # Define actor class - much cleaner!
     class PipelineActor:
-        def __init__(self, pipeline_skeleton, model_refs):
+        def __init__(self, actor_wrapper):
             # Load pipeline with all models (zero-copy for each model)
-            self.pipeline = load_pipeline_in_actor(
-                pipeline_skeleton, model_refs, device="cpu"
-            )
+            self.pipeline = actor_wrapper.load()
 
         def __call__(self, batch):
             inputs = torch.tensor(batch["data"], dtype=torch.float32)
@@ -117,13 +118,10 @@ def example_pipeline():
         lambda batch: {"data": np.random.randn(len(batch["id"]), 100)}, batch_size=32
     )
 
-    # Run inference
+    # Run inference - simpler kwargs!
     results = ds.map_batches(
         PipelineActor,
-        fn_constructor_kwargs={
-            "pipeline_skeleton": pipeline_skeleton,
-            "model_refs": model_refs,
-        },
+        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=4),
     )
@@ -136,30 +134,29 @@ def example_pipeline():
 
 # Example 3: Actor with preprocessing/postprocessing
 def example_with_processing():
-    """Example showing preprocessing and postprocessing in the actor."""
+    """Example showing preprocessing and postprocessing in the actor - NEW API."""
 
-    # Create a simple model
-    class SimpleModel(torch.nn.Module):
+    # Create a simple pipeline
+    class SimplePipeline:
         def __init__(self):
-            super().__init__()
-            self.layers = torch.nn.Sequential(
+            self.model = torch.nn.Sequential(
                 torch.nn.Linear(50, 128),
                 torch.nn.ReLU(),
                 torch.nn.Linear(128, 5),
             )
 
-        def forward(self, x):
-            return self.layers(x)
+        def __call__(self, x):
+            return self.model(x)
 
-    model = SimpleModel()
+    pipeline = SimplePipeline()
 
-    # Prepare for actors
-    model_ref = prepare_model_for_actors(model)
+    # Wrap for actors
+    actor_wrapper = ActorWrapper(pipeline, device="cpu")
 
     # Actor with pre/post processing built-in
     class ProcessingActor:
-        def __init__(self, model_ref, device="cpu"):
-            self.model = load_model_in_actor(model_ref, device=device)
+        def __init__(self, actor_wrapper):
+            self.pipeline = actor_wrapper.load()
 
         def __call__(self, batch):
             # Preprocess
@@ -167,7 +164,7 @@ def example_with_processing():
 
             # Inference
             with torch.no_grad():
-                outputs = self.model(inputs)
+                outputs = self.pipeline(inputs)
 
             # Postprocess
             predictions = outputs.argmax(dim=1).numpy()
@@ -180,10 +177,10 @@ def example_with_processing():
         lambda batch: {"data": np.random.randn(len(batch["id"]), 50)}, batch_size=32
     )
 
-    # Run inference with custom device
+    # Run inference
     results = ds.map_batches(
         ProcessingActor,
-        fn_constructor_kwargs={"model_ref": model_ref, "device": "cpu"},
+        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=2),
     )
@@ -203,34 +200,41 @@ def example_with_processing():
 
 # Example 4: GPU-based inference
 def example_gpu():
-    """Example using GPU for inference (if available)."""
+    """Example using GPU for inference (if available) - NEW API."""
 
     if not torch.cuda.is_available():
         print("\nGPU example: Skipping (no GPU available)")
         return
 
-    # Create model
-    model = torch.nn.Sequential(
-        torch.nn.Linear(100, 512),
-        torch.nn.ReLU(),
-        torch.nn.Linear(512, 10),
-    )
+    # Create pipeline
+    class GPUPipeline:
+        def __init__(self):
+            self.model = torch.nn.Sequential(
+                torch.nn.Linear(100, 512),
+                torch.nn.ReLU(),
+                torch.nn.Linear(512, 10),
+            )
 
-    # Prepare for actors
-    model_ref = prepare_model_for_actors(model)
+        def __call__(self, x):
+            return self.model(x)
+
+    pipeline = GPUPipeline()
+
+    # Wrap for actors with GPU device
+    actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
 
     # Actor with GPU
     class GPUInferenceActor:
-        def __init__(self, model_ref):
-            # Load model directly onto GPU
-            self.model = load_model_in_actor(model_ref, device="cuda:0")
+        def __init__(self, actor_wrapper):
+            # Load pipeline directly onto GPU
+            self.pipeline = actor_wrapper.load()
 
         def __call__(self, batch):
             # Move data to GPU
             inputs = torch.tensor(batch["data"], dtype=torch.float32, device="cuda:0")
 
             with torch.no_grad():
-                outputs = self.model(inputs)
+                outputs = self.pipeline(inputs)
 
             # Move results back to CPU
             return {"predictions": outputs.cpu().numpy()}
@@ -243,7 +247,7 @@ def example_gpu():
     # Run with GPU actors (1 actor per GPU)
     results = ds.map_batches(
         GPUInferenceActor,
-        fn_constructor_kwargs={"model_ref": model_ref},
+        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=1),  # Typically 1 actor per GPU
         num_gpus=1,  # Request GPU resources

@@ -1,16 +1,14 @@
 import argparse
 import gc
 import os
-import threading
 import time
 
 import psutil
 import ray
 import torch
 
-from ray_zerocopy import (
-    ZeroCopyModel,
-)
+from ray_zerocopy import TaskWrapper
+from ray_zerocopy.benchmark import monitor_memory_context
 
 
 def create_large_model():
@@ -38,67 +36,6 @@ def get_memory_mb(pid=None):
         return process.memory_info().rss / 1024 / 1024
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         return 0
-
-
-def monitor_memory(stop_event, interval=1.0):
-    """Monitor memory usage of all python processes related to this script."""
-    current_pid = os.getpid()
-    print(f"\nStarting memory monitor (Parent PID: {current_pid})...")
-
-    while not stop_event.is_set():
-        try:
-            ray_workers_rss = []
-            ray_workers_uss = []
-
-            # Iterate over all processes to find Ray workers
-            for proc in psutil.process_iter(
-                ["pid", "name", "cmdline", "memory_info", "memory_full_info"]
-            ):
-                try:
-                    name = proc.info["name"] or ""
-                    cmdline = proc.info["cmdline"] or []
-                    cmdline_str = " ".join(cmdline)
-
-                    is_worker = (
-                        "ray::worker_task" in name or "ray::worker_task" in cmdline_str
-                    )
-
-                    if is_worker:
-                        # RSS includes shared memory
-                        rss = proc.info["memory_info"].rss / 1024 / 1024
-                        ray_workers_rss.append(rss)
-
-                        # USS is unique private memory (excludes shared)
-                        # Note: memory_full_info can be slower/require privileges
-                        try:
-                            uss = proc.memory_full_info().uss / 1024 / 1024
-                            ray_workers_uss.append(uss)
-                        except:
-                            pass
-
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    continue
-
-            # Calculate totals
-            total_rss = sum(ray_workers_rss)
-            total_uss = sum(ray_workers_uss) if ray_workers_uss else 0
-
-            # Format output
-            timestamp = time.strftime("%H:%M:%S")
-            workers_info = f"Workers: {len(ray_workers_rss)}"
-            if ray_workers_rss:
-                workers_info += (
-                    f" | Total RSS: {total_rss:.1f} MB | Total USS: {total_uss:.1f} MB"
-                )
-
-            print(
-                f"[{timestamp}] Parent: {get_memory_mb(current_pid):.1f} MB | {workers_info}"
-            )
-
-        except Exception:
-            pass
-
-        time.sleep(interval)
 
 
 @ray.remote
@@ -131,18 +68,17 @@ def worker_task_normal(model_copy, sleep_time):
 
 
 @ray.remote
-def worker_task_zerocopy(model_ref, sleep_time):
-    """Worker task that loads and uses the model with zero-copy."""
+def worker_task_zerocopy(wrapped_pipeline, sleep_time):
+    """Worker task that uses the zero-copy wrapped pipeline."""
     pid = os.getpid()
     print(f"Worker (ZeroCopy) {pid} started. Mapping memory...")
 
     # Ensure we force garbage collection BEFORE measuring or doing anything else
     gc.collect()
 
-    model = ZeroCopyModel.from_object_ref(model_ref)
-
+    # Use the wrapped pipeline - model loading happens automatically with zero-copy
     with torch.no_grad():
-        _ = model(torch.randn(1, 5000))
+        _ = wrapped_pipeline(torch.randn(1, 5000))
 
     # Force GC to stabilize memory reading
     gc.collect()
@@ -175,7 +111,7 @@ def main():
     parser.add_argument(
         "--duration",
         type=int,
-        default=60,
+        default=30,
         help="Duration to keep workers alive (seconds)",
     )
     args = parser.parse_args()
@@ -196,46 +132,39 @@ def main():
     print(f"Mode: {'ZERO-COPY' if args.zerocopy else 'NORMAL (Copy)'}")
     print("-" * 50)
 
-    # Start memory monitor thread
-    stop_monitor = threading.Event()
-    monitor_thread = threading.Thread(target=monitor_memory, args=(stop_monitor,))
-    monitor_thread.daemon = True
-    monitor_thread.start()
+    # Use memory monitor context manager
+    with monitor_memory_context(interval=1.0, show_parent=True) as memory_stats:
+        start_time = time.time()
 
-    start_time = time.time()
+        if args.zerocopy:
+            # Zero-copy path using TaskWrapper
+            class Pipeline:
+                def __init__(self, model):
+                    self.model = model
 
-    if args.zerocopy:
-        # Zero-copy path
-        class Pipeline:
-            def __init__(self, model):
-                self.model = model
+                def __call__(self, x):
+                    return self.model(x)
 
-        pipeline = Pipeline(model)
-        rewritten = ZeroCopyModel.rewrite(pipeline)
-        model_ref = ZeroCopyModel.to_object_ref(rewritten.model)  # type: ignore
+            pipeline = Pipeline(model)
+            wrapped = TaskWrapper(pipeline)
 
-        futures = [
-            worker_task_zerocopy.remote(model_ref, args.duration)
-            for _ in range(args.workers)
-        ]
-    else:
-        # Normal path
-        model_ref = ray.put(model)
-        futures = [
-            worker_task_normal.remote(model_ref, args.duration)
-            for _ in range(args.workers)
-        ]
+            futures = [
+                worker_task_zerocopy.remote(wrapped, args.duration)
+                for _ in range(args.workers)
+            ]
+        else:
+            # Normal path
+            model_ref = ray.put(model)
+            futures = [
+                worker_task_normal.remote(model_ref, args.duration)
+                for _ in range(args.workers)
+            ]
 
-    # Wait for all tasks to complete
-    ray.get(futures)
+        ray.get(futures)
 
-    # Stop monitor
-    stop_monitor.set()
-    monitor_thread.join()
-
-    end_time = time.time()
-    print("-" * 50)
-    print(f"Benchmark completed in {end_time - start_time:.2f} seconds")
+        end_time = time.time()
+        print("-" * 50)
+        print(f"Benchmark completed in {end_time - start_time:.2f} seconds")
 
 
 if __name__ == "__main__":

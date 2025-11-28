@@ -1,13 +1,18 @@
 """
 Example demonstrating zero-copy loading with TorchScript models.
 
-This example shows how to use the TorchScript-specific functions to achieve
+This example shows how to use the NEW JITTaskWrapper API for
 zero-copy model loading with compiled PyTorch models.
+
+For JIT actor support (NEW!), see the new_api_examples.py file.
 """
 
 import ray
 import torch
 import torch.nn as nn
+
+from ray_zerocopy import JITTaskWrapper
+from ray_zerocopy.jit import extract_tensors, replace_tensors
 
 
 # Example 1: Simple model extraction and restoration
@@ -42,13 +47,13 @@ def example_basic_jit():
     print(f"Original output shape: {original_output.shape}")
 
     # Extract tensors (separating weights from structure)
-    model_bytes, tensors = extract_tensors_jit(scripted_model)
+    model_bytes, tensors = extract_tensors(scripted_model)
     print(f"\nModel skeleton size: {len(model_bytes):,} bytes")
     print(f"Number of tensors: {len(tensors)}")
     print(f"Tensor names: {list(tensors.keys())}")
 
     # Restore the model (zero-copy operation)
-    restored_model = replace_tensors_jit(model_bytes, tensors)
+    restored_model = replace_tensors(model_bytes, tensors)
     restored_output = restored_model(test_input)
 
     print(f"\nRestored output shape: {restored_output.shape}")
@@ -88,7 +93,7 @@ def example_ray_jit():
     scripted_model = torch.jit.trace(model, example_input)
 
     # Extract and put in Ray object store
-    model_data = extract_tensors_jit(scripted_model)
+    model_data = extract_tensors(scripted_model)
     model_ref = ray.put(model_data)
 
     print(f"Model stored in Ray object store: {model_ref}")
@@ -98,7 +103,7 @@ def example_ray_jit():
     def run_inference(model_data, input_data):
         # Ray automatically dereferences ObjectRefs passed as arguments
         model_bytes, tensors = model_data
-        model = replace_tensors_jit(model_bytes, tensors)
+        model = replace_tensors(model_bytes, tensors)
         with torch.no_grad():
             return model(input_data)
 
@@ -112,11 +117,11 @@ def example_ray_jit():
     print()
 
 
-# Example 3: Using the high-level API with pipeline
+# Example 3: Using the high-level API with pipeline - NEW JITTaskWrapper!
 def example_pipeline_jit():
-    """Example using the high-level pipeline API."""
+    """Example using the NEW JITTaskWrapper API."""
     print("=" * 60)
-    print("Example 3: TorchScript Pipeline API")
+    print("Example 3: TorchScript Pipeline API (NEW JITTaskWrapper)")
     print("=" * 60)
 
     if not ray.is_initialized():
@@ -138,6 +143,9 @@ def example_pipeline_jit():
         def predict(self, x):
             return self.model(x)
 
+        def __call__(self, x):
+            return self.predict(x)
+
     # Original pipeline
     pipeline = ModelPipeline()
     test_input = torch.randn(3, 20)
@@ -145,19 +153,20 @@ def example_pipeline_jit():
 
     print(f"Original pipeline prediction shape: {original_result.shape}")
 
-    # Rewrite pipeline for zero-copy loading
-    rewritten_pipeline = rewrite_pipeline_jit(pipeline)
+    # Wrap pipeline with NEW JITTaskWrapper
+    wrapped_pipeline = JITTaskWrapper(pipeline)
 
-    print("Pipeline rewritten for zero-copy")
-    print(f"Model type: {type(rewritten_pipeline.model)}")
+    print("Pipeline wrapped with JITTaskWrapper")
+    print("Calls now go through Ray tasks with zero-copy loading")
 
-    # Use the rewritten pipeline (calls happen via Ray)
-    rewritten_result = rewritten_pipeline.predict(test_input)
+    # Use the wrapped pipeline (calls happen via Ray tasks)
+    wrapped_result = wrapped_pipeline.predict(test_input)
 
-    print(f"Rewritten pipeline prediction shape: {rewritten_result.shape}")
+    print(f"Wrapped pipeline prediction shape: {wrapped_result.shape}")
     print(
-        f"Results match: {torch.allclose(original_result, rewritten_result, rtol=1e-4)}"
+        f"Results match: {torch.allclose(original_result, wrapped_result, rtol=1e-4)}"
     )
+    print("✓ NEW API makes TorchScript zero-copy much simpler!")
     print()
 
 

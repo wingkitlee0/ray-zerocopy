@@ -75,11 +75,31 @@ class _RemoteModelShim:
         self._model_ref = model_ref
         self._valid_methods = valid_methods
 
+    def __getstate__(self):
+        """Return state for pickling."""
+        return {"_model_ref": self._model_ref, "_valid_methods": self._valid_methods}
+
+    def __setstate__(self, state):
+        """Restore state from pickling."""
+        self._model_ref = state["_model_ref"]
+        self._valid_methods = state["_valid_methods"]
+
     def __getattr__(self, name: str):
-        if name in self._valid_methods:
+        # Avoid recursion during pickling - raise AttributeError for private attributes
+        # and any attributes not in valid_methods
+        if name.startswith("_"):
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            )
+
+        # Get _valid_methods directly from __dict__ to avoid recursion
+        valid_methods = object.__getattribute__(self, "_valid_methods")
+
+        if name in valid_methods:
+            model_ref = object.__getattribute__(self, "_model_ref")
 
             def _proxy(*args, **kwargs):
-                return ray.get(call_model.remote(self._model_ref, args, kwargs, name))
+                return ray.get(call_model.remote(model_ref, args, kwargs, name))
 
             return _proxy
         raise AttributeError(
@@ -97,16 +117,15 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__", "forward")) -> Any
     Rewrites TorchScript models in a model processing pipeline into Ray tasks
     that load the model using zero-copy model loading.
 
-    This is similar to ray_zerocopy.rewrite_pipeline() but specifically designed for
-    TorchScript models (torch.jit.ScriptModule).
+    This is a low-level API. For most use cases, consider using
+    :class:`ray_zerocopy.JITTaskWrapper` for a higher-level interface.
 
     Limitations:
-    * Only TorchScript models (torch.jit.ScriptModule) will be rewritten
-    * Only models stored in fields of the top-level object will be rewritten
-    * Does not recursively traverse child objects
+    * Only models that are subclasses of ``torch.jit.ScriptModule`` will be rewritten.
     * If there are multiple pointers to the same model, they will be
-      treated as separate models
-    * pipeline must work properly after being shallow-copied with copy.copy()
+      treated as separate models and loaded separately onto Plasma.
+    * ``pipeline`` must be an object that will still work properly after
+      being shallow-copied with :func:`copy.copy()`
 
     :param pipeline: Python object that wraps a model serving pipeline
     :param method_names: Names of model methods to forward to remote classes.
@@ -132,6 +151,11 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__", "forward")) -> Any
 
         # Determine which methods exist on this model
         valid_methods = {m for m in method_names if hasattr(model, m)}
+
+        # Always include __call__ if the model is callable, as pipeline methods
+        # often call the model directly (e.g., self.model(x))
+        if hasattr(model, "__call__") and callable(model):
+            valid_methods.add("__call__")
 
         # Create the shim
         shim = _RemoteModelShim(model_ref, valid_methods)

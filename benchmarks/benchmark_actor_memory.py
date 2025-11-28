@@ -1,18 +1,18 @@
 """
 Memory benchmark comparing three approaches:
 1. Normal (no zero-copy) - Each actor has its own model copy
-2. Actor zero-copy - Actors load model from object store with zero-copy
-3. Task zero-copy - rewrite_pipeline approach (spawns tasks from actors)
+2. Actor zero-copy - Actors load model from object store with zero-copy using ActorWrapper
+3. Task zero-copy - TaskWrapper approach (spawns Ray tasks from actors for each call)
 
 Usage:
     # Normal (baseline)
-    python benchmark_actor_memory.py --mode normal --actors 4
+    python benchmark_actor_memory.py --mode normal --workers 4
 
-    # Actor zero-copy (NEW approach)
-    python benchmark_actor_memory.py --mode actor --actors 4
+    # Actor zero-copy (ActorWrapper - RECOMMENDED for actors)
+    python benchmark_actor_memory.py --mode actor --workers 4
 
-    # Task zero-copy (OLD rewrite_pipeline)
-    python benchmark_actor_memory.py --mode task --actors 4
+    # Task zero-copy (TaskWrapper - spawns tasks, less efficient for actors)
+    python benchmark_actor_memory.py --mode task --workers 4
 """
 
 import argparse
@@ -24,11 +24,10 @@ import numpy as np
 import psutil
 import ray
 import torch
-from common import monitor_memory_context
 from ray.data import ActorPoolStrategy
 
-from ray_zerocopy import ZeroCopyModel
-from ray_zerocopy.actor import load_model_in_actor, prepare_model_for_actors
+from ray_zerocopy import ActorWrapper, TaskWrapper
+from ray_zerocopy.benchmark import monitor_memory_context
 
 
 def create_large_model():
@@ -104,17 +103,18 @@ class NormalActor:
 
 
 # ============================================================================
-# Approach 2: Actor Zero-Copy (NEW)
+# Approach 2: Actor Zero-Copy (NEW) - Using ActorWrapper
 # ============================================================================
 
 
 class ActorZeroCopyActor:
-    """Actor that loads model using zero-copy from object store."""
+    """Actor that loads model using zero-copy from object store with ActorWrapper."""
 
-    def __init__(self, model_ref):
+    def __init__(self, actor_wrapper):
         self.pid = os.getpid()
         print(f"[Actor ZeroCopy {self.pid}] Loading model (zero-copy)...")
-        self.model = load_model_in_actor(model_ref)
+        # Use ActorWrapper.load() to reconstruct the pipeline with zero-copy
+        self.pipeline = actor_wrapper.load()
         gc.collect()
         mem = get_memory_mb(self.pid)
         print(f"[Actor ZeroCopy {self.pid}] Ready. Memory: {mem:.1f} MB")
@@ -128,7 +128,7 @@ class ActorZeroCopyActor:
                 else int(batch["size"])
             )
             inputs = torch.randn(batch_size, 5000)
-            outputs = self.model(inputs)
+            outputs = self.pipeline(inputs)
 
         # Measure memory after inference
         gc.collect()
@@ -148,23 +148,27 @@ class ActorZeroCopyActor:
 
 
 # ============================================================================
-# Approach 3: Task Zero-Copy (using ZeroCopyModel - loads on each call)
+# Approach 3: Task Zero-Copy (using TaskWrapper)
+# Note: TaskWrapper spawns Ray tasks for each inference call. This is less
+# efficient when used inside actors since you're spawning tasks from actors.
+# Use ActorWrapper instead for actor-based workloads.
 # ============================================================================
 
 
 class TaskZeroCopyActor:
-    """Actor that uses ZeroCopyModel (loads model from object store on each call)."""
+    """Actor that uses TaskWrapper (spawns Ray tasks for inference on each call)."""
 
-    def __init__(self, model_ref):
+    def __init__(self, wrapped_pipeline):
         self.pid = os.getpid()
         print(f"[Task ZeroCopy {self.pid}] Setting up zero-copy model...")
-        self.model_ref = model_ref
+        # Store the wrapped pipeline (will spawn Ray tasks for inference)
+        self.wrapped_pipeline = wrapped_pipeline
         gc.collect()
         mem = get_memory_mb(self.pid)
         print(f"[Task ZeroCopy {self.pid}] Ready. Memory: {mem:.1f} MB")
 
     def __call__(self, batch):
-        # This loads the model from object store on EVERY call!
+        # This spawns a Ray task for inference on EVERY call!
         batch_size = (
             int(batch["size"][0])
             if hasattr(batch["size"], "__len__")
@@ -172,13 +176,9 @@ class TaskZeroCopyActor:
         )
         inputs = torch.randn(batch_size, 5000)
 
-        # Load model using ZeroCopyModel API (zero-copy from object store)
-        # Note: from_object_ref expects the dereferenced tuple
-        model_data = ray.get(self.model_ref)
-        model = ZeroCopyModel.from_object_ref(model_data)
-
+        # Use TaskWrapper - spawns Ray task for model inference
         with torch.no_grad():
-            outputs = model(inputs)
+            outputs = self.wrapped_pipeline(inputs)
 
         # Measure memory after inference
         gc.collect()
@@ -256,29 +256,40 @@ def main():
             )
 
         elif args.mode == "actor":
-            # Actor zero-copy: Prepare model for actors
-            model_ref = prepare_model_for_actors(model)
+            # Actor zero-copy: Use ActorWrapper
+            class Pipeline:
+                def __init__(self, model):
+                    self.model = model
+
+                def __call__(self, x):
+                    return self.model(x)
+
+            pipeline = Pipeline(model)
+            actor_wrapper = ActorWrapper(pipeline, device="cpu")
+
             results = ds.map_batches(
                 ActorZeroCopyActor,
-                fn_constructor_kwargs={"model_ref": model_ref},
+                fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
                 batch_size=1,
                 compute=ActorPoolStrategy(size=args.workers),
             )
 
         elif args.mode == "task":
-            # Task zero-copy: Use ZeroCopyModel API
-            # This loads model on each call (inefficient for actors!)
+            # Task zero-copy: Use TaskWrapper
+            # This spawns Ray tasks for inference (inefficient for actors!)
             class Pipeline:
                 def __init__(self, model):
                     self.model = model
 
+                def __call__(self, x):
+                    return self.model(x)
+
             pipeline = Pipeline(model)
-            rewritten = ZeroCopyModel.rewrite(pipeline)
-            model_ref = ZeroCopyModel.to_object_ref(rewritten.model)
+            wrapped = TaskWrapper(pipeline)
 
             results = ds.map_batches(
                 TaskZeroCopyActor,
-                fn_constructor_kwargs={"model_ref": model_ref},
+                fn_constructor_kwargs={"wrapped_pipeline": wrapped},
                 batch_size=1,
                 compute=ActorPoolStrategy(size=args.workers),
             )
