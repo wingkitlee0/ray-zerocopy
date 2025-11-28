@@ -1,0 +1,36 @@
+name: Run Unit Tests
+
+on:
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install uv
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        # Install the package with dev dependencies
+        uv pip install --system -e ".[dev]"
+    
+    - name: Run tests with pytest
+      run: |
+        pytest tests/ -v --tb=short
+      env:
+        # Set Ray to use limited resources in CI
+        RAY_memory_monitor_refresh_ms: 0
