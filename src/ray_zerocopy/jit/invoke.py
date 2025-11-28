@@ -97,6 +97,21 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__", "forward")) -> Any
     Rewrites TorchScript models in a model processing pipeline into Ray tasks
     that load the model using zero-copy model loading.
 
+    .. deprecated::
+        This function is deprecated. Use :class:`ray_zerocopy.JITTaskWrapper` instead:
+        
+        Old API::
+        
+            from ray_zerocopy.jit import rewrite_pipeline
+            rewritten = rewrite_pipeline(pipeline)
+            result = rewritten(data)
+        
+        New API::
+        
+            from ray_zerocopy import JITTaskWrapper
+            wrapped = JITTaskWrapper(pipeline)
+            result = wrapped(data)
+
     This is similar to ray_zerocopy.rewrite_pipeline() but specifically designed for
     TorchScript models (torch.jit.ScriptModule).
 
@@ -115,6 +130,13 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__", "forward")) -> Any
     :returns: A shallow copy of pipeline in which all TorchScript models
               are replaced with wrapper objects that forward calls to Ray tasks
     """
+    import warnings
+    warnings.warn(
+        "jit.rewrite_pipeline() is deprecated. Use JITTaskWrapper instead: "
+        "from ray_zerocopy import JITTaskWrapper; wrapped = JITTaskWrapper(pipeline)",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # Find all TorchScript models hanging directly off the pipeline object
     jit_model_attr_names = [
         name

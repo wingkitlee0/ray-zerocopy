@@ -93,6 +93,20 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__",)) -> Any:
     Rewrites PyTorch models in a model processing pipeline into Ray tasks
     that load the model using zero-copy model loading.
 
+    .. deprecated:: 
+        This function is deprecated. Use :class:`ray_zerocopy.TaskWrapper` instead:
+        
+        Old API::
+        
+            rewritten = rewrite_pipeline(pipeline)
+            result = rewritten.method(data)
+        
+        New API::
+        
+            from ray_zerocopy import TaskWrapper
+            wrapped = TaskWrapper(pipeline)
+            result = wrapped.method(data)
+
     Current limitatations:
     * Only models that are stored in fields of the top-level object will be
       rewritten. This method does *not* recursively traverse child objects.
@@ -109,6 +123,13 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__",)) -> Any:
      that are stored in fields of ``pipeline`` are replaced with wrapper
      objects that forward calls to Ray tasks.
     """
+    import warnings
+    warnings.warn(
+        "rewrite_pipeline() is deprecated. Use TaskWrapper instead: "
+        "from ray_zerocopy import TaskWrapper; wrapped = TaskWrapper(pipeline)",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # Find all the models hanging directly off of the pipeline object.
     model_attr_names = [
         name

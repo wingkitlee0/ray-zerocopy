@@ -31,6 +31,24 @@ def prepare_model_for_actors(model: torch.nn.Module) -> ray.ObjectRef:
     """
     Prepare a PyTorch model for zero-copy loading across multiple Ray actors.
 
+    .. deprecated::
+        This function is deprecated. Use :class:`ray_zerocopy.ActorWrapper` instead:
+        
+        Old API::
+        
+            model_ref = prepare_model_for_actors(model)
+            class InferenceActor:
+                def __init__(self, model_ref):
+                    self.model = load_model_in_actor(model_ref)
+        
+        New API::
+        
+            from ray_zerocopy import ActorWrapper
+            actor_wrapper = ActorWrapper(pipeline)
+            class InferenceActor:
+                def __init__(self, actor_wrapper):
+                    self.pipeline = actor_wrapper.load()
+
     This function extracts the model weights and stores them in Ray's object store,
     enabling multiple actors to load the same model without duplicating memory.
 
@@ -55,6 +73,12 @@ def prepare_model_for_actors(model: torch.nn.Module) -> ray.ObjectRef:
         ...     compute=ActorPoolStrategy(size=4)
         ... )
     """
+    warnings.warn(
+        "prepare_model_for_actors() is deprecated. Use ActorWrapper instead: "
+        "from ray_zerocopy import ActorWrapper; wrapper = ActorWrapper(pipeline)",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return ray.put(extract_tensors(model))
 
 
@@ -113,6 +137,24 @@ def rewrite_pipeline_for_actors(
     """
     Prepare a pipeline object with PyTorch models for use in Ray actors.
 
+    .. deprecated::
+        This function is deprecated. Use :class:`ray_zerocopy.ActorWrapper` instead:
+        
+        Old API::
+        
+            skeleton, model_refs = rewrite_pipeline_for_actors(pipeline)
+            class InferenceActor:
+                def __init__(self, skeleton, model_refs):
+                    self.pipeline = load_pipeline_in_actor(skeleton, model_refs)
+        
+        New API::
+        
+            from ray_zerocopy import ActorWrapper
+            actor_wrapper = ActorWrapper(pipeline)
+            class InferenceActor:
+                def __init__(self, actor_wrapper):
+                    self.pipeline = actor_wrapper.load()
+
     This function extracts all PyTorch models from a pipeline object and stores
     them in Ray's object store. It returns a factory function that can reconstruct
     the pipeline with loaded models inside each actor.
@@ -161,6 +203,12 @@ def rewrite_pipeline_for_actors(
         ...     compute=ActorPoolStrategy(size=4)
         ... )
     """
+    warnings.warn(
+        "rewrite_pipeline_for_actors() is deprecated. Use ActorWrapper instead: "
+        "from ray_zerocopy import ActorWrapper; wrapper = ActorWrapper(pipeline)",
+        DeprecationWarning,
+        stacklevel=2
+    )
     # Auto-discover model attributes if not specified
     if model_attr_names is None:
         model_attr_names = [
