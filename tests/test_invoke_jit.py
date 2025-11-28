@@ -301,6 +301,7 @@ def test_model_ref_shared_across_tasks(ray_cluster, simple_jit_model):
     # Define a task that uses the model
     @ray.remote
     def batch_inference(model_data, batch_inputs):
+
         # Ray automatically dereferences ObjectRefs passed as arguments
         model_bytes, tensors = model_data
         model = replace_tensors(model_bytes, tensors)
