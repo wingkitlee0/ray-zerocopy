@@ -34,7 +34,6 @@ Usage Examples:
     >>> class InferenceActor:
     ...     def __init__(self, model_wrapper):
     ...         self.model = model_wrapper.load()
-    ...         self.model = self.model.to("cuda:0")  # Move to GPU if needed
     ...     def __call__(self, batch):
     ...         return self.model(batch["data"])
     >>>
@@ -172,9 +171,13 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
     ) -> "ModelWrapper[T]":
         """Instantiate a ModelWrapper from a model or pipeline.
 
+        A ModelWrapper is serializable and can be put into Ray's object store by
+        `ray.put()`.
+
         Args:
             model_or_pipeline: The model or pipeline to wrap
             mode: Execution mode - "task" for immediate use, "actor" for actor loading
+                Must be "task" or "actor". Defaults to "actor".
             model_attr_names: The attribute names of the models in the pipeline
             method_names: Model methods to expose via remote tasks (auto-selected if None)
 
@@ -189,6 +192,9 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             >>> wrapper = ModelWrapper.from_model(pipeline, mode="actor")
             >>> # In actor: pipeline = wrapper.load()
         """
+        if mode not in ["task", "actor"]:
+            raise ValueError(f"Invalid mode: {mode}")
+
         is_standalone = isinstance(model_or_pipeline, torch.nn.Module)
 
         _pipeline: Union[_ModuleContainer, T] = (
@@ -323,7 +329,6 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             pipeline = rzc_nn.load_pipeline_for_actors(
                 self._skeleton,
                 self._model_refs,
-                device=None,
                 use_fast_load=_use_fast_load,
             )
 

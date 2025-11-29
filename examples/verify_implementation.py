@@ -52,7 +52,7 @@ def verify_actor_mode():
     wrapper = ModelWrapper.from_model(model, mode="actor")
 
     # Load the model
-    loaded = wrapper.to_pipeline(device="cpu")
+    loaded = wrapper.load()
 
     test_input = torch.randn(3, 10)
     result = loaded(test_input)
@@ -76,7 +76,7 @@ def verify_backward_compatibility():
 
     # Actor mode
     actor_wrapper = ModelWrapper.from_model(model, mode="actor")
-    loaded = actor_wrapper.to_pipeline(device="cpu")
+    loaded = actor_wrapper.load()
     result = loaded(test_input)
     assert result.shape == (3, 5)
     print("  ✓ Actor mode works")

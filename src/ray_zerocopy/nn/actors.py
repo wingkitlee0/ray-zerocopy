@@ -86,7 +86,6 @@ def prepare_pipeline_for_actors(
 def load_pipeline_for_actors(
     pipeline_skeleton: T,
     model_refs: dict[str, ray.ObjectRef],
-    device: Optional[str] = None,
     use_fast_load: bool = False,
 ) -> T:
     """
@@ -112,7 +111,6 @@ def load_pipeline_for_actors(
         ...     self.pipeline = load_pipeline_for_actors(
         ...         skeleton,
         ...         model_refs,
-        ...         device="cuda:0"
         ...     )
     """
     # Suppress PyTorch warnings about immutable tensors
@@ -131,10 +129,6 @@ def load_pipeline_for_actors(
             replace_tensors_direct(model_skeleton, model_weights)
         else:
             replace_tensors(model_skeleton, model_weights)
-
-        # Move to specified device if needed
-        if device is not None:
-            model_skeleton = model_skeleton.to(device)
 
         # Ensure model is in eval mode
         model_skeleton.eval()

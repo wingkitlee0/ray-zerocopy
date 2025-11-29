@@ -113,7 +113,7 @@ def test_model_wrapper_actor_basic():
     wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Load in current process (simulating actor)
-    loaded_pipeline = wrapper.to_pipeline(device="cpu")
+    loaded_pipeline = wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -129,27 +129,13 @@ def test_model_wrapper_actor_multi_model():
     wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Load in current process
-    loaded_pipeline = wrapper.to_pipeline(device="cpu")
+    loaded_pipeline = wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)
     result = loaded_pipeline(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
-
-
-def test_model_wrapper_actor_device_override():
-    """Test ModelWrapper actor mode with device specification in to_pipeline()."""
-    pipeline = SimplePipeline()
-    wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-
-    # Load with device specification
-    loaded_pipeline = wrapper.to_pipeline(device="cpu")
-
-    test_input = torch.randn(3, 10)
-    result = loaded_pipeline(test_input)
-
-    assert result.shape == (3, 5)
 
 
 # ============================================================================
@@ -269,7 +255,7 @@ def test_jit_actor_wrapper_basic():
     actor_wrapper = JITActorWrapper(pipeline)
 
     # Load in current process (simulating actor)
-    loaded_pipeline = actor_wrapper.load(device="cpu")
+    loaded_pipeline = actor_wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -305,7 +291,7 @@ def test_jit_actor_wrapper_multi_model():
     actor_wrapper = JITActorWrapper(pipeline)
 
     # Load in current process
-    loaded_pipeline = actor_wrapper.load(device="cpu")
+    loaded_pipeline = actor_wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -335,32 +321,6 @@ def test_jit_actor_wrapper_constructor_kwargs():
 
     assert "pipeline_skeleton" in kwargs
     assert "model_refs" in kwargs
-
-
-def test_jit_actor_wrapper_device_override():
-    """Test JITActorWrapper with device specification in load()."""
-    model = SimpleModel()
-    model.eval()
-    example_input = torch.randn(1, 10)
-    jit_model = torch.jit.trace(model, example_input)
-
-    class JITPipeline:
-        def __init__(self):
-            self.model = jit_model
-
-        def __call__(self, x):
-            return self.model(x)
-
-    pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline)
-
-    # Load with device specification
-    loaded_pipeline = actor_wrapper.load(device="cpu")
-
-    test_input = torch.randn(3, 10)
-    result = loaded_pipeline(test_input)
-
-    assert result.shape == (3, 5)
 
 
 # ============================================================================
@@ -415,7 +375,7 @@ def test_wrapper_determinism():
 
     # Test ModelWrapper actor mode
     actor_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-    loaded = actor_wrapper.to_pipeline(device="cpu")
+    loaded = actor_wrapper.load()
     with torch.no_grad():
         actor_output = loaded(test_input)
     assert torch.allclose(original_output, actor_output, rtol=1e-4)

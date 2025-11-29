@@ -66,7 +66,7 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 @ray.remote
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
+        self.pipeline = model_wrapper.load()
 
     def predict(self, data):
         with torch.no_grad():

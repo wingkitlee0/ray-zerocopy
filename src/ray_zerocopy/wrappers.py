@@ -27,7 +27,7 @@ Usage Examples:
     >>>
     >>> class MyActor:
     ...     def __init__(self, model_wrapper):
-    ...         self.pipeline = model_wrapper.to_pipeline()
+    ...         self.pipeline = model_wrapper.load()
     ...     def __call__(self, batch):
     ...         return self.pipeline(batch["data"])
     >>>
@@ -180,7 +180,7 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
         >>> class InferenceActor:
         ...     def __init__(self, actor_wrapper):
         ...         # Specify device at load time
-        ...         self.pipeline = actor_wrapper.load(device="cuda:0")
+        ...         self.pipeline = actor_wrapper.load()
         ...
         ...     def __call__(self, batch):
         ...         return self.pipeline(batch["data"])
@@ -226,7 +226,7 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
         self._skeleton = state["_skeleton"]
         self._model_refs = state["_model_refs"]
 
-    def load(self, device: Optional[str] = None) -> T:
+    def load(self) -> T:
         """
         Load the pipeline in an actor.
 
@@ -245,7 +245,7 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
             >>> class MyActor:
             ...     def __init__(self, actor_wrapper):
             ...         # Move to GPU after loading from object store
-            ...         self.pipeline = actor_wrapper.load(device="cuda:0")
+            ...         self.pipeline = actor_wrapper.load()
             ...
             ...     def __call__(self, batch):
             ...         return self.pipeline(batch["data"])
@@ -254,7 +254,6 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
         return rzc_jit.load_pipeline_for_actors(
             self._skeleton,
             self._model_refs,
-            device=device,
         )
 
     @property

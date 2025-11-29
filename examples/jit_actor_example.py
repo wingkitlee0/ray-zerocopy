@@ -51,7 +51,7 @@ def example_simple_jit_actor():
 
     # Create and wrap pipeline for actors
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Define actor class
     class JITInferenceActor:
@@ -144,7 +144,7 @@ def example_jit_pipeline_actors():
 
     # Wrap for actors
     pipeline = EncoderDecoderPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Define actor class
     class PipelineActor:
@@ -211,7 +211,7 @@ def example_jit_with_processing():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Actor with pre/post processing
     class ProcessingActor:
@@ -293,7 +293,7 @@ def example_jit_gpu():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cuda:0")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # GPU actor
     class GPUJITActor:
@@ -303,7 +303,7 @@ def example_jit_gpu():
 
         def __call__(self, batch):
             # Move data to GPU
-            inputs = torch.tensor(batch["data"], dtype=torch.float32, device="cuda:0")
+            inputs = torch.tensor(batch["data"], dtype=torch.float32).to("cuda:0")
 
             with torch.no_grad():
                 outputs = self.pipeline(inputs)

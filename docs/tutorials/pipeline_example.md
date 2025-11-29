@@ -204,7 +204,7 @@ The actor loads the complete pipeline:
 class PipelineInferenceActor:
     def __init__(self, model_wrapper):
         # Loads both encoder and decoder via zero-copy
-        self.pipeline = model_wrapper.load(device="cpu")
+        self.pipeline = model_wrapper.load()
 
     def __call__(self, batch):
         inputs = torch.tensor(batch["data"], dtype=torch.float32)
@@ -327,7 +327,6 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 class PipelineInferenceActor:
     def __init__(self, model_wrapper):
         self.pipeline = model_wrapper.load()
-        self.pipeline = self.pipeline.to("cuda:0")
 
 results = ds.map_batches(
     PipelineInferenceActor,

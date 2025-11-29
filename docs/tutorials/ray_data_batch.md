@@ -348,7 +348,6 @@ Add logging in actors:
 class InferenceActor:
     def __init__(self, model_wrapper):
         self.model = model_wrapper.load()
-        self.model = self.model.to("cuda:0")
         self.batch_count = 0
 
     def __call__(self, batch):
@@ -393,7 +392,7 @@ model_wrapper = ModelWrapper.from_model(model, mode="actor")
 # Define production actor
 class ProductionActor:
     def __init__(self, model_wrapper):
-        self.model = model_wrapper.load(device="cuda:0")
+        self.model = model_wrapper.load()
         self.batch_count = 0
         self.error_count = 0
         logger.info("Actor initialized")

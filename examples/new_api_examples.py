@@ -126,13 +126,13 @@ def example_actor_wrapper():
 
     # Create and wrap pipeline
     pipeline = Pipeline()
-    wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+    wrapper = ModelWrapper.from_model(pipeline)
 
     # Define actor class
     class InferenceActor(Generic[T]):
         def __init__(self, model_wrapper: ModelWrapper[T]):
             # Load pipeline inside actor
-            self.pipeline = model_wrapper.to_pipeline()
+            self.pipeline = model_wrapper.load()
 
         def __call__(self, batch):
             # Process batch through pipeline

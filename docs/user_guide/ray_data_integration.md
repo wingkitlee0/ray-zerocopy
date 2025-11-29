@@ -134,7 +134,7 @@ results.write_csv("s3://bucket/results/")
 ```python
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
+        self.pipeline = model_wrapper.load()
         self.preprocessor = Preprocessor()
         self.postprocessor = Postprocessor()
 
@@ -250,7 +250,7 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # Define actor with preprocessing
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
+        self.pipeline = model_wrapper.load()
         self.transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),

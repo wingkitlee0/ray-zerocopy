@@ -85,7 +85,6 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 class InferenceActor:
     def __init__(self, model_wrapper):
         self.pipeline = model_wrapper.load()  # Load once (on CPU)
-        self.pipeline = self.pipeline.to("cuda:0")  # Move to GPU if needed
 
     def __call__(self, batch):
         return self.pipeline(batch)  # Reuse loaded model
@@ -140,7 +139,7 @@ from ray_zerocopy import JITActorWrapper
 jit_pipeline = torch.jit.trace(pipeline, example_input)
 
 # Use with actors
-actor_wrapper = JITActorWrapper(jit_pipeline, device="cuda:0")
+actor_wrapper = JITActorWrapper(jit_pipeline)
 ```
 
 See [TorchScript Guide](torchscript.md) for details.

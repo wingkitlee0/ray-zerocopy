@@ -6,7 +6,6 @@ This guide covers the key concepts and usage patterns for ray-zerocopy.
 :maxdepth: 2
 
 core_concepts
-torchscript
 ray_data_integration
 ```
 

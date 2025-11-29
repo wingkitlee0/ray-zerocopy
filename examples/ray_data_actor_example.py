@@ -31,13 +31,11 @@ def example_simple_model():
 
     # Create and wrap pipeline for actors
     pipeline = SimplePipeline()
-    model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+    model_wrapper = ModelWrapper.from_model(pipeline)
 
-    # Define actor class - much simpler now!
     class InferenceActor:
         def __init__(self, model_wrapper):
-            # Load pipeline from wrapper (zero-copy)
-            self.pipeline = model_wrapper.to_pipeline(device="cpu")
+            self.pipeline = model_wrapper.load()
 
         def __call__(self, batch):
             # Convert batch to tensor
@@ -95,13 +93,13 @@ def example_pipeline():
     pipeline = EncoderDecoderPipeline()
 
     # Wrap for actors - single line!
-    model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+    model_wrapper = ModelWrapper.from_model(pipeline)
 
     # Define actor class - much cleaner!
     class PipelineActor:
         def __init__(self, model_wrapper):
             # Load pipeline with all models (zero-copy for each model)
-            self.pipeline = model_wrapper.to_pipeline(device="cpu")
+            self.pipeline = model_wrapper.load()
 
         def __call__(self, batch):
             inputs = torch.tensor(batch["data"], dtype=torch.float32)
@@ -149,12 +147,12 @@ def example_with_processing():
     pipeline = SimplePipeline()
 
     # Wrap for actors
-    model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+    model_wrapper = ModelWrapper.from_model(pipeline)
 
     # Actor with pre/post processing built-in
     class ProcessingActor:
         def __init__(self, model_wrapper):
-            self.pipeline = model_wrapper.to_pipeline(device="cpu")
+            self.pipeline = model_wrapper.load()
 
         def __call__(self, batch):
             # Preprocess
@@ -223,13 +221,12 @@ def example_gpu():
 
     # Actor with GPU
     class GPUInferenceActor:
-        def __init__(self, model_wrapper):
-            # Load pipeline directly onto GPU
-            self.pipeline = model_wrapper.to_pipeline(device="cuda:0")
+        def __init__(self, model_wrapper: ModelWrapper):
+            self.pipeline = model_wrapper.load()
 
         def __call__(self, batch):
             # Move data to GPU
-            inputs = torch.tensor(batch["data"], dtype=torch.float32, device="cuda:0")
+            inputs = torch.tensor(batch["data"], dtype=torch.float32)
 
             with torch.no_grad():
                 outputs = self.pipeline(inputs)

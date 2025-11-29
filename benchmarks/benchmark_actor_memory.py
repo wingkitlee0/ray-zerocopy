@@ -87,8 +87,7 @@ class ActorZeroCopyActor:
     def __init__(self, model_wrapper: ModelWrapper):
         self.pid = os.getpid()
         with log_memory(f"Actor ZeroCopy {self.pid}"):
-            # Use ModelWrapper.to_pipeline() to reconstruct the pipeline with zero-copy
-            self.pipeline = model_wrapper.to_pipeline(device="cpu")
+            self.pipeline = model_wrapper.load()
 
     def __call__(self, batch: dict[str, np.ndarray]):
         with torch.no_grad():
@@ -152,8 +151,7 @@ class ModelWrapperActor:
     def __init__(self, model_wrapper: ModelWrapper):
         self.pid = os.getpid()
         with log_memory(f"ModelWrapper ZeroCopy {self.pid}"):
-            # Use ModelWrapper.to_pipeline() to reconstruct the model with zero-copy
-            self.model = model_wrapper.to_pipeline()
+            self.model = model_wrapper.load()
 
     def __call__(self, batch: dict[str, np.ndarray]):
         with torch.no_grad():
@@ -244,7 +242,7 @@ def main():
                     return self.model(x)
 
             pipeline = Pipeline(model)
-            model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+            model_wrapper = ModelWrapper.from_model(pipeline)
 
             results = ds.map_batches(
                 ActorZeroCopyActor,

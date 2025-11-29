@@ -64,21 +64,6 @@ def test_model_wrapper_task_mode_pipeline():
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
 
-def test_model_wrapper_for_tasks_shortcut():
-    """Test ModelWrapper.for_tasks() convenience method."""
-    if not ray.is_initialized():
-        ray.init(ignore_reinit_error=True)
-
-    model = SimpleModel()
-    wrapper = ModelWrapper.for_tasks(model)
-
-    # Should be callable immediately
-    test_input = torch.randn(3, 10)
-    result = wrapper(test_input)
-
-    assert result.shape == (3, 5), "Output shape should be (3, 5)"
-
-
 def test_model_wrapper_actor_mode_basic():
     """Test ModelWrapper in actor mode with basic functionality."""
     if not ray.is_initialized():
@@ -156,7 +141,7 @@ def test_model_wrapper_pickling_actor_mode():
     restored = pickle.loads(pickled)
 
     # Should still work after loading
-    loaded = restored.load(device="cpu")
+    loaded = restored.load()
     test_input = torch.randn(3, 10)
     result = loaded(test_input)
 
@@ -244,7 +229,7 @@ def test_model_wrapper_serialize_deserialize():
     restored = ModelWrapper.deserialize(**serialized)
 
     # Should work after loading
-    loaded = restored.load(device="cpu")
+    loaded = restored.load()
     test_input = torch.randn(3, 10)
     result = loaded(test_input)
 
@@ -271,7 +256,7 @@ def test_model_wrapper_actor_mode_attribute_error():
         ray.init(ignore_reinit_error=True)
 
     pipeline = SimplePipeline()
-    wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+    wrapper = ModelWrapper.from_model(pipeline)
 
     # Should raise error when trying to access attributes
     try:

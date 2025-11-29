@@ -155,7 +155,7 @@ def extract_tensors_minimal(
     for name, tensor in original_state_dict.items():
         # Use bool dtype (1 byte per element) with same shape
         minimal_state_dict[name] = torch.zeros(
-            tensor.shape, dtype=torch.bool, device="cpu"
+            tensor.shape, dtype=torch.bool
         )
 
     # Try to load minimal state dict
