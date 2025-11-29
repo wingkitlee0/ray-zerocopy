@@ -11,8 +11,8 @@ import psutil
 import ray
 import torch
 
+from ray_zerocopy import TaskWrapper
 from ray_zerocopy._internal.zerocopy import extract_tensors
-from ray_zerocopy.nn import ZeroCopyModel, rewrite_pipeline
 
 
 def get_worker_memory_mb():
@@ -146,27 +146,21 @@ def test_memory_footprint_multiple_workers(ray_cluster):
             self.model = model
 
     pipeline = Pipeline(model)
-    rewritten = rewrite_pipeline(pipeline)
+    wrapped_pipeline = TaskWrapper(pipeline)
 
     @ray.remote
-    def worker_task_zerocopy(model_ref, input_data):
+    def worker_task_zerocopy(wrapped_pipeline, input_data):
         """Worker task that loads and uses the model with zero-copy."""
-        from ray_zerocopy.nn import ZeroCopyModel
-
-        model = ZeroCopyModel.from_object_ref(model_ref)
         with torch.no_grad():
-            output = model(input_data)
+            output = wrapped_pipeline.model(input_data)
 
         # Measure memory usage inside the worker
         mem_mb = get_worker_memory_mb()
         return output, mem_mb
 
-    # Get the model reference from the rewritten pipeline using the static utility
-    model_ref_zerocopy = ZeroCopyModel.to_object_ref(rewritten.model)
-
     # Launch multiple workers with zero-copy loading
     futures_zerocopy = [
-        worker_task_zerocopy.remote(model_ref_zerocopy, x) for _ in range(num_workers)
+        worker_task_zerocopy.remote(wrapped_pipeline, x) for _ in range(num_workers)
     ]
     results_zerocopy = ray.get(futures_zerocopy)
 
@@ -222,19 +216,18 @@ def test_memory_footprint_sequential_calls(ray_cluster):
             self.model = model
 
     pipeline = Pipeline(model)
-    rewritten = rewrite_pipeline(pipeline)
+    wrapped_pipeline = TaskWrapper(pipeline)
 
     x = torch.randn(5, 5000)
     num_calls = 5
 
     @ray.remote
-    def sequential_worker(model_ref, input_data, iterations):
+    def sequential_worker(wrapped_pipeline, input_data, iterations):
         measurements = []
-        model = ZeroCopyModel.from_object_ref(model_ref)
 
         for _ in range(iterations):
             with torch.no_grad():
-                _ = model(input_data)
+                _ = wrapped_pipeline.model(input_data)
             gc.collect()
             process = psutil.Process(os.getpid())
             try:
@@ -245,8 +238,7 @@ def test_memory_footprint_sequential_calls(ray_cluster):
 
         return measurements
 
-    model_ref = ZeroCopyModel.to_object_ref(rewritten.model)
-    measurements = ray.get(sequential_worker.remote(model_ref, x, num_calls))
+    measurements = ray.get(sequential_worker.remote(wrapped_pipeline, x, num_calls))
 
     print(f"\nSequential measurements (MB): {measurements}")
 
