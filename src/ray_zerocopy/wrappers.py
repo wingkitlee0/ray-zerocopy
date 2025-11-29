@@ -59,13 +59,18 @@ Usage Examples:
     ... )
 """
 
-from typing import Any, Optional
+from typing import Generic, Optional, TypeVar
+
+import ray
 
 from ray_zerocopy import jit as rzc_jit
 from ray_zerocopy import nn as rzc_nn
+from ray_zerocopy._internal import WrapperMixin
+
+T = TypeVar("T")
 
 
-class TaskWrapper:
+class TaskWrapper(WrapperMixin[T], Generic[T]):
     """
     Wrapper for zero-copy nn.Module inference via Ray tasks.
 
@@ -96,7 +101,7 @@ class TaskWrapper:
         >>> result = wrapped.process(data)  # Each model call spawns a Ray task
     """
 
-    def __init__(self, pipeline: Any, method_names: tuple = ("__call__",)):
+    def __init__(self, pipeline: T, method_names: tuple = ("__call__",)):
         """
         Initialize the TaskWrapper.
 
@@ -106,9 +111,14 @@ class TaskWrapper:
         """
         self._rewritten = rzc_nn.rewrite_pipeline(pipeline, method_names)
 
+        self._configure_wrapper(pipeline)
+        self._preserve_call_signature(pipeline)
+
     def __getstate__(self):
         """Return state for pickling."""
-        return {"_rewritten": self._rewritten}
+        return {
+            "_rewritten": self._rewritten,
+        }
 
     def __setstate__(self, state):
         """Restore state from pickling."""
@@ -123,7 +133,7 @@ class TaskWrapper:
         return getattr(self._rewritten, name)
 
 
-class JITTaskWrapper:
+class JITTaskWrapper(WrapperMixin[T], Generic[T]):
     """
     Wrapper for zero-copy TorchScript inference via Ray tasks.
 
@@ -160,7 +170,7 @@ class JITTaskWrapper:
         >>> result = wrapped(data)  # Model runs in Ray task
     """
 
-    def __init__(self, pipeline: Any, method_names: tuple = ("__call__", "forward")):
+    def __init__(self, pipeline: T, method_names: tuple = ("__call__", "forward")):
         """
         Initialize the JITTaskWrapper.
 
@@ -170,9 +180,14 @@ class JITTaskWrapper:
         """
         self._rewritten = rzc_jit.rewrite_pipeline(pipeline, method_names)
 
+        self._configure_wrapper(pipeline)
+        self._preserve_call_signature(pipeline)
+
     def __getstate__(self):
         """Return state for pickling."""
-        return {"_rewritten": self._rewritten}
+        return {
+            "_rewritten": self._rewritten,
+        }
 
     def __setstate__(self, state):
         """Restore state from pickling."""
@@ -187,7 +202,7 @@ class JITTaskWrapper:
         return getattr(self._rewritten, name)
 
 
-class ActorWrapper:
+class ActorWrapper(WrapperMixin[T], Generic[T]):
     """
     Wrapper for zero-copy nn.Module inference in Ray actors.
 
@@ -236,11 +251,13 @@ class ActorWrapper:
         ... )
     """
 
+    _skeleton: T
+    _model_refs: dict[str, ray.ObjectRef]
+
     def __init__(
         self,
-        pipeline: Any,
+        pipeline: T,
         model_attr_names: Optional[list] = None,
-        use_fast_load: bool = False,
     ):
         """
         Initialize the ActorWrapper.
@@ -251,11 +268,12 @@ class ActorWrapper:
             use_fast_load: Use faster but riskier loading method
         """
         self._skeleton, self._model_refs = rzc_nn.rewrite_pipeline_for_actors(
-            pipeline, model_attr_names, use_fast_load=use_fast_load
+            pipeline,
+            model_attr_names,
         )
-        self._use_fast_load = use_fast_load
+        self._configure_wrapper(pipeline)
 
-    def load(self, device: Optional[str] = None) -> Any:
+    def load(self, device: Optional[str] = None, _use_fast_load: bool = False) -> T:
         """
         Load the pipeline in an actor.
 
@@ -266,6 +284,7 @@ class ActorWrapper:
             device: Device to move models to after loading (e.g., "cuda:0", "cpu").
                    If None, no device transfer is performed (models remain on the
                    device they were reconstructed on, typically CPU from object store).
+            _use_fast_load: Use faster but slightly riskier loading method.
 
         Returns:
             Pipeline object with models loaded and ready for inference
@@ -283,36 +302,19 @@ class ActorWrapper:
             self._skeleton,
             self._model_refs,
             device=device,
-            use_fast_load=self._use_fast_load,
+            use_fast_load=_use_fast_load,
         )
 
     @property
     def constructor_kwargs(self) -> dict:
-        """
-        Get kwargs dict for Ray Data fn_constructor_kwargs.
-
-        This is an alternative to passing the ActorWrapper directly.
-        You can pass the individual components if needed.
-
-        Returns:
-            Dictionary with pipeline_skeleton, model_refs, and use_fast_load
-
-        Example:
-            >>> actor_wrapper = ActorWrapper(pipeline)
-            >>> ds.map_batches(
-            ...     MyActor,
-            ...     fn_constructor_kwargs=actor_wrapper.constructor_kwargs,
-            ...     compute=ActorPoolStrategy(size=4)
-            ... )
-        """
+        """Get kwargs dict for Ray Data fn_constructor_kwargs."""
         return {
             "pipeline_skeleton": self._skeleton,
             "model_refs": self._model_refs,
-            "use_fast_load": self._use_fast_load,
         }
 
 
-class JITActorWrapper:
+class JITActorWrapper(WrapperMixin[T], Generic[T]):
     """
     Wrapper for zero-copy TorchScript inference in Ray actors.
 
@@ -365,9 +367,12 @@ class JITActorWrapper:
         ... )
     """
 
+    _skeleton: T
+    _model_refs: dict[str, ray.ObjectRef]
+
     def __init__(
         self,
-        pipeline: Any,
+        pipeline: T,
         model_attr_names: Optional[list] = None,
     ):
         """
@@ -378,8 +383,10 @@ class JITActorWrapper:
             model_attr_names: List of model attribute names (auto-detected if None)
         """
         self._skeleton, self._model_refs = rzc_jit.rewrite_pipeline_for_actors(
-            pipeline, model_attr_names
+            pipeline,
+            model_attr_names,
         )
+        self._configure_wrapper(pipeline)
 
     def __getstate__(self):
         """Return state for pickling."""
@@ -393,7 +400,7 @@ class JITActorWrapper:
         self._skeleton = state["_skeleton"]
         self._model_refs = state["_model_refs"]
 
-    def load(self, device: Optional[str] = None) -> Any:
+    def load(self, device: Optional[str] = None) -> T:
         """
         Load the pipeline in an actor.
 
@@ -426,23 +433,7 @@ class JITActorWrapper:
 
     @property
     def constructor_kwargs(self) -> dict:
-        """
-        Get kwargs dict for Ray Data fn_constructor_kwargs.
-
-        This is an alternative to passing the JITActorWrapper directly.
-        You can pass the individual components if needed.
-
-        Returns:
-            Dictionary with pipeline_skeleton and model_refs
-
-        Example:
-            >>> actor_wrapper = JITActorWrapper(pipeline)
-            >>> ds.map_batches(
-            ...     MyActor,
-            ...     fn_constructor_kwargs=actor_wrapper.constructor_kwargs,
-            ...     compute=ActorPoolStrategy(size=4)
-            ... )
-        """
+        """Get kwargs dict for Ray Data fn_constructor_kwargs."""
         return {
             "pipeline_skeleton": self._skeleton,
             "model_refs": self._model_refs,

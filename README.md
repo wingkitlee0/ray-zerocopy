@@ -1,57 +1,102 @@
 # ray-zerocopy
 
-**Zero-copy model loading for PyTorch in Ray**
+**Zero-copy model sharing for PyTorch inference in Ray**
 
-This library enables efficient model loading across Ray workers using zero-copy mechanisms, eliminating the need to duplicate large model weights in memory.
+This library enables efficient model sharing across Ray workers using zero-copy mechanisms, eliminating the need to duplicate large model weights in memory when performing inference.
 
 ## Features
 
-- 🚀 **Zero-copy loading** - Share model weights across Ray workers without duplication
-- 🎯 **Ray Data integration** - Optimized for `map_batches` with `ActorPoolStrategy`
+- 🚀 **Zero-copy sharing** - Share model weights across Ray workers without duplication
+- 🎯 **Flexible inference** - Use with Ray Tasks, Ray Actors, or Ray Data Actor UDFs
 - 💾 **Memory efficient** - 4 actors with 5GB model = ~5GB total (not 20GB)
-- ⚡ **High throughput** - Direct inference in actors (no task spawning overhead)
-- 🎮 **GPU support** - Pin models to specific GPUs for maximum performance
+- ⚡ **High throughput** - Direct inference without model loading overhead
+- 🔧 **Pipeline support** - Share entire pipelines (classes with `nn.Module` attributes)
 
 ## Quick Start
 
-### For Ray Data Actors (Recommended)
+### For Ray Data Actor UDFs (Recommended for Batch Inference)
 
 ```python
 from ray.data import ActorPoolStrategy
-from ray_zerocopy.actor import prepare_model_for_actors, load_model_in_actor
+from ray_zerocopy import ActorWrapper
 
-# 1. Prepare model for zero-copy sharing
-model = YourPyTorchModel()
-model_ref = prepare_model_for_actors(model)
+# 1. Create your pipeline (a class with nn.Module attributes)
+class MyPipeline:
+    def __init__(self):
+        self.encoder = EncoderModel()
+        self.decoder = DecoderModel()
 
-# 2. Define actor that loads model with zero-copy
+    def __call__(self, data):
+        encoded = self.encoder(data)
+        return self.decoder(encoded)
+
+pipeline = MyPipeline()
+
+# 2. Wrap with ActorWrapper for zero-copy sharing
+actor_wrapper = ActorWrapper(pipeline)
+
+# 3. Define actor UDF that loads the pipeline
 class InferenceActor:
-    def __init__(self, model_ref, device="cuda:0"):
-        self.model = load_model_in_actor(model_ref, device=device)
+    def __init__(self, actor_wrapper):
+        self.pipeline = actor_wrapper.load()
 
     def __call__(self, batch):
         with torch.no_grad():
-            return self.model(batch["data"])
+            return self.pipeline(batch["data"])
 
-# 3. Use with Ray Data
+# 4. Use with Ray Data
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"model_ref": model_ref, "device": "cuda:0"},
+    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
     compute=ActorPoolStrategy(size=4),  # 4 actors share the model
-    num_gpus=1
 )
 ```
 
-### For Task-Based Inference
+### For Ray Actors (General Purpose)
 
 ```python
-from ray_zerocopy.invoke import rewrite_pipeline
+import ray
+from ray_zerocopy import ActorWrapper
 
-pipeline = YourPipeline()
-rewritten = rewrite_pipeline(pipeline)
+# Wrap pipeline for actors
+pipeline = MyPipeline()
+actor_wrapper = ActorWrapper(pipeline)
 
-# Each call spawns a Ray task that loads the model with zero-copy
-result = rewritten.model(data)
+# Define inference actor
+@ray.remote
+class InferenceActor:
+    def __init__(self, actor_wrapper):
+        self.pipeline = actor_wrapper.load()
+
+    def predict(self, data):
+        with torch.no_grad():
+            return self.pipeline(data)
+
+# Create actors that share the model
+actors = [InferenceActor.remote(actor_wrapper) for _ in range(4)]
+results = ray.get([actor.predict.remote(data) for actor in actors])
+```
+
+### For Ray Tasks (Ad-hoc Inference)
+
+```python
+from ray_zerocopy import TaskWrapper
+
+# A Pipeline is a class with nn.Module attributes
+class MyPipeline:
+    def __init__(self):
+        self.encoder = EncoderModel()
+        self.decoder = DecoderModel()
+
+    def __call__(self, data):
+        encoded = self.encoder(data)
+        return self.decoder(encoded)
+
+pipeline = MyPipeline()
+wrapped = TaskWrapper(pipeline)
+
+# Each call spawns a Ray task with zero-copy model loading
+result = wrapped(data)
 ```
 
 ## Installation
@@ -72,17 +117,11 @@ pip install -e .
 
 | Scenario | Use This |
 |----------|----------|
-| Ray Data `map_batches` with actors | `actor.prepare_model_for_actors()` |
-| High-throughput batch inference | `actor.prepare_model_for_actors()` |
-| GPU-pinned inference | `actor.prepare_model_for_actors()` |
-| Ad-hoc task-based inference | `invoke.rewrite_pipeline()` |
-| Sporadic inference calls | `invoke.rewrite_pipeline()` |
-
-## Documentation
-
-- **[Actor Usage Guide](docs/actor_usage.md)** - Complete guide for Ray Data actors
-- **[Comparison](docs/comparison.md)** - Detailed comparison of approaches
-- **[Examples](examples/ray_data_actor_example.py)** - Working code examples
+| Ray Data `map_batches` batch inference | `ActorWrapper` with Ray Data Actor UDF |
+| High-throughput batch inference | `ActorWrapper` with Ray Data Actor UDF |
+| Long-running inference service | `ActorWrapper` with Ray Actor |
+| Ad-hoc task-based inference | `TaskWrapper` with Ray Task |
+| Sporadic inference calls | `TaskWrapper` with Ray Task |
 
 ## Memory Savings Example
 
@@ -97,35 +136,64 @@ Total: 20GB
 
 **With zero-copy:**
 ```
-Object Store: 5GB (shared)
+Ray Object Store: 5GB (shared)
 Actor 1-4: reference object store
 Total: ~5GB
 ```
 
-## API Overview
+## Pipelines
 
-### Actor-Based (for Ray Data)
+A **Pipeline** is a class with `nn.Module` attributes. The library automatically identifies and shares all models in a pipeline:
 
 ```python
-# Prepare model for actors
-model_ref = prepare_model_for_actors(model)
+class MyPipeline:
+    def __init__(self):
+        self.feature_extractor = FeatureExtractorModel()
+        self.classifier = ClassifierModel()
+        self.config = {"threshold": 0.5}  # Non-model attributes are preserved
 
-# Load in actor
-model = load_model_in_actor(model_ref, device="cuda:0")
+    def __call__(self, data):
+        features = self.feature_extractor(data)
+        return self.classifier(features)
 
-# For pipelines with multiple models
-skeleton, refs = rewrite_pipeline_for_actors(pipeline)
-pipeline = load_pipeline_in_actor(skeleton, refs, device="cuda:0")
+# For Ray Actors and Ray Data
+actor_wrapper = ActorWrapper(pipeline)
+# ... in actor: self.pipeline = actor_wrapper.load()
+
+# For Ray Tasks
+wrapped = TaskWrapper(pipeline)
 ```
 
-### Task-Based (for ad-hoc inference)
+The library automatically identifies `nn.Module` attributes and applies zero-copy sharing to them, while preserving other attributes like config dictionaries.
+
+## API Overview
+
+### Wrapper Classes
 
 ```python
-# Rewrite pipeline to use Ray tasks
-rewritten = rewrite_pipeline(pipeline)
+from ray_zerocopy import TaskWrapper, ActorWrapper
 
-# Direct task invocation
-result = call_model.remote(model_ref, args, kwargs)
+# TaskWrapper - For Ray Tasks
+wrapped = TaskWrapper(pipeline)
+result = wrapped(data)  # Runs in Ray task with zero-copy
+
+# ActorWrapper - For Ray Actors and Ray Data
+actor_wrapper = ActorWrapper(pipeline)
+# ... in actor __init__:
+pipeline = actor_wrapper.load()  # Load with zero-copy in actor
+```
+
+### TorchScript Support
+
+```python
+from ray_zerocopy import JITTaskWrapper, JITActorWrapper
+
+# JITTaskWrapper - For TorchScript models with Ray Tasks
+jit_pipeline = torch.jit.trace(pipeline, example_input)
+wrapped = JITTaskWrapper(jit_pipeline)
+
+# JITActorWrapper - For TorchScript models with Ray Actors
+actor_wrapper = JITActorWrapper(jit_pipeline)
 ```
 
 ## Requirements

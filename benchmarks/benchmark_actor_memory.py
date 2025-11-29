@@ -19,6 +19,7 @@ import argparse
 import gc
 import os
 import time
+from contextlib import contextmanager
 
 import numpy as np
 import psutil
@@ -27,39 +28,20 @@ import torch
 from ray.data import ActorPoolStrategy
 
 from ray_zerocopy import ActorWrapper, TaskWrapper
-from ray_zerocopy.benchmark import monitor_memory_context
+from ray_zerocopy.benchmark import (
+    create_large_model,
+    get_memory_mb,
+    monitor_memory_context,
+)
 
 
-def create_large_model():
-    """Create a model large enough to see memory differences (~500MB)."""
-    return torch.nn.Sequential(
-        torch.nn.Linear(5000, 5000),
-        torch.nn.ReLU(),
-        torch.nn.Linear(5000, 5000),
-        torch.nn.ReLU(),
-        torch.nn.Linear(5000, 5000),
-        torch.nn.ReLU(),
-        torch.nn.Linear(5000, 5000),
-        torch.nn.ReLU(),
-        torch.nn.Linear(5000, 5000),
-        torch.nn.ReLU(),
-        torch.nn.Linear(5000, 100),
-    )
-
-
-def get_memory_mb(pid=None):
-    if pid is None:
-        pid = os.getpid()
-    try:
-        process = psutil.Process(pid)
-        return process.memory_info().rss / 1024 / 1024
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return 0
-
-
-# ============================================================================
-# Approach 1: Normal (No Zero-Copy) - Baseline
-# ============================================================================
+@contextmanager
+def log_memory(name: str):
+    print(f"[{name}] Loading model (full copy)...")
+    yield
+    gc.collect()
+    mem = get_memory_mb(os.getpid())
+    print(f"[{name}] Ready. Memory: {mem:.1f} MB")
 
 
 class NormalActor:
@@ -67,12 +49,8 @@ class NormalActor:
 
     def __init__(self, model_ref):
         self.pid = os.getpid()
-        print(f"[Normal Actor {self.pid}] Loading model (full copy)...")
-        # Get model from object store (this creates a copy in actor memory)
-        self.model = ray.get(model_ref)
-        gc.collect()
-        mem = get_memory_mb(self.pid)
-        print(f"[Normal Actor {self.pid}] Ready. Memory: {mem:.1f} MB")
+        with log_memory(f"Normal Actor {self.pid}"):
+            self.model = ray.get(model_ref)
 
     def __call__(self, batch):
         with torch.no_grad():
@@ -102,31 +80,18 @@ class NormalActor:
         }
 
 
-# ============================================================================
-# Approach 2: Actor Zero-Copy (NEW) - Using ActorWrapper
-# ============================================================================
-
-
 class ActorZeroCopyActor:
     """Actor that loads model using zero-copy from object store with ActorWrapper."""
 
-    def __init__(self, actor_wrapper):
+    def __init__(self, actor_wrapper: ActorWrapper):
         self.pid = os.getpid()
-        print(f"[Actor ZeroCopy {self.pid}] Loading model (zero-copy)...")
-        # Use ActorWrapper.load() to reconstruct the pipeline with zero-copy
-        self.pipeline = actor_wrapper.load()
-        gc.collect()
-        mem = get_memory_mb(self.pid)
-        print(f"[Actor ZeroCopy {self.pid}] Ready. Memory: {mem:.1f} MB")
+        with log_memory(f"Actor ZeroCopy {self.pid}"):
+            # Use ActorWrapper.load() to reconstruct the pipeline with zero-copy
+            self.pipeline = actor_wrapper.load()
 
-    def __call__(self, batch):
+    def __call__(self, batch: dict[str, np.ndarray]):
         with torch.no_grad():
-            # batch["size"] is a numpy array with batch_size values
-            batch_size = (
-                int(batch["size"][0])
-                if hasattr(batch["size"], "__len__")
-                else int(batch["size"])
-            )
+            batch_size = int(batch["size"][0])
             inputs = torch.randn(batch_size, 5000)
             outputs = self.pipeline(inputs)
 
@@ -147,37 +112,20 @@ class ActorZeroCopyActor:
         }
 
 
-# ============================================================================
-# Approach 3: Task Zero-Copy (using TaskWrapper)
-# Note: TaskWrapper spawns Ray tasks for each inference call. This is less
-# efficient when used inside actors since you're spawning tasks from actors.
-# Use ActorWrapper instead for actor-based workloads.
-# ============================================================================
-
-
 class TaskZeroCopyActor:
     """Actor that uses TaskWrapper (spawns Ray tasks for inference on each call)."""
 
     def __init__(self, wrapped_pipeline):
         self.pid = os.getpid()
-        print(f"[Task ZeroCopy {self.pid}] Setting up zero-copy model...")
-        # Store the wrapped pipeline (will spawn Ray tasks for inference)
-        self.wrapped_pipeline = wrapped_pipeline
-        gc.collect()
-        mem = get_memory_mb(self.pid)
-        print(f"[Task ZeroCopy {self.pid}] Ready. Memory: {mem:.1f} MB")
+        with log_memory(f"Task ZeroCopy {self.pid}"):
+            # Store the wrapped pipeline (will spawn Ray tasks for inference)
+            self.wrapped_pipeline = wrapped_pipeline
 
     def __call__(self, batch):
-        # This spawns a Ray task for inference on EVERY call!
-        batch_size = (
-            int(batch["size"][0])
-            if hasattr(batch["size"], "__len__")
-            else int(batch["size"])
-        )
-        inputs = torch.randn(batch_size, 5000)
+        batch_size = int(batch["size"][0])
 
-        # Use TaskWrapper - spawns Ray task for model inference
         with torch.no_grad():
+            inputs = torch.randn(batch_size, 5000)
             outputs = self.wrapped_pipeline(inputs)
 
         # Measure memory after inference
@@ -265,7 +213,7 @@ def main():
                     return self.model(x)
 
             pipeline = Pipeline(model)
-            actor_wrapper = ActorWrapper(pipeline, device="cpu")
+            actor_wrapper = ActorWrapper(pipeline)
 
             results = ds.map_batches(
                 ActorZeroCopyActor,

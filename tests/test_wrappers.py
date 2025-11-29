@@ -128,14 +128,12 @@ def test_actor_wrapper_multi_model():
 def test_actor_wrapper_constructor_kwargs():
     """Test ActorWrapper.constructor_kwargs property."""
     pipeline = SimplePipeline()
-    actor_wrapper = ActorWrapper(pipeline, use_fast_load=False)
+    actor_wrapper = ActorWrapper(pipeline)
 
     kwargs = actor_wrapper.constructor_kwargs
 
     assert "pipeline_skeleton" in kwargs
     assert "model_refs" in kwargs
-    assert "use_fast_load" in kwargs
-    assert kwargs["use_fast_load"] is False
 
 
 def test_actor_wrapper_device_override():
