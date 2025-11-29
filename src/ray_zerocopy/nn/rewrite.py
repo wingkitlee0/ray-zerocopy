@@ -37,39 +37,63 @@ def prepare_pipeline(
     filter_private: bool = False,
 ) -> tuple[T, dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]]:
     """
-    Generic pipeline preparation for both task-based and actor-based execution.
+    Prepare a Pipeline instance that contains PyTorch modules for zero-copy model loading.
 
-    This function extracts all PyTorch models from a pipeline object and stores
-    them in Ray's object store. Returns a skeleton and model information dict
-    that can be used to reconstruct the pipeline for either tasks or actors.
+    This function extracts all PyTorch modules (`nn.Modules`) from a pipeline and stores
+    them in Ray's object store. To load and reconstruct the pipeline, use `load_pipeline_for_tasks` and
+    `load_pipeline_for_actors` for task and actor mode respectively.
 
     Args:
         pipeline: Pipeline object containing PyTorch models as attributes
-        model_attr_names: List of attribute names that are models. If None,
-            auto-discovers all torch.nn.Module attributes
+
+        model_attr_names: Explicit list of attribute names to treat as models.
+            - If provided: Only these attributes will be extracted and prepared
+            - If None (default): Auto-discovers all torch.nn.Module attributes
+            Use explicit names when you want precise control over which models to prepare,
+            or when auto-discovery picks up unwanted modules.
+
         method_names: Names of model methods to expose via remote tasks.
-            If None, no method tracking (actor mode).
-            If provided, tracks methods (task mode).
-        filter_private: If True, exclude underscore-prefixed attributes
-            during auto-discovery. Typically True for actors, False for tasks.
+            - If None: No method tracking (actor mode - actors expose all methods)
+            - If provided: Track only these methods (task mode - for _RemoteModelShim)
+            Example: ("__call__", "forward", "generate")
+
+        filter_private: Whether to exclude underscore-prefixed attributes during
+            auto-discovery (only applies when model_attr_names is None).
+            - False (default for tasks): Include all models, even those starting with '_'.
+              This ensures all models are available regardless of naming convention.
+            - True (typical for actors): Skip attributes starting with '_' to avoid
+              exposing internal/private models as remote methods.
 
     Returns:
         Tuple of (pipeline_skeleton, model_info_dict) where model_info_dict
-        maps attribute names to (model_ref, valid_methods) tuples.
-        valid_methods is None in actor mode, Set[str] in task mode.
+        maps attribute names to (model_ref, allowed_methods) tuples.
 
-    Example - Task mode:
+        allowed_methods specifies which methods can be called remotely:
+        - In task mode: Set[str] containing method names that are allowed to be
+          invoked remotely via _RemoteModelShim. This acts as an allowlist to
+          restrict which model methods can be called as Ray tasks, ensuring only
+          intended methods are remotely callable.
+        - In actor mode: None (actors expose all methods by default)
+
+    Example - Task mode (include all models):
         >>> skeleton, model_info = prepare_pipeline(
         ...     pipeline,
         ...     method_names=("__call__", "forward"),
         ...     filter_private=False
         ... )
 
-    Example - Actor mode:
+    Example - Actor mode (exclude private models):
         >>> skeleton, model_info = prepare_pipeline(
         ...     pipeline,
         ...     method_names=None,
         ...     filter_private=True
+        ... )
+
+    Example - Explicit model selection:
+        >>> skeleton, model_info = prepare_pipeline(
+        ...     pipeline,
+        ...     model_attr_names=["encoder", "decoder"],  # Only these two
+        ...     method_names=("__call__",)
         ... )
     """
     # Auto-discover model attributes if not specified
@@ -93,93 +117,15 @@ def prepare_pipeline(
             model_ref = ray.put(extract_tensors(model))
 
             # Track methods only if method_names provided (task mode)
-            valid_methods = None
+            allowed_methods = None
             if method_names is not None:
-                valid_methods = {m for m in method_names if hasattr(model, m)}
+                allowed_methods = {m for m in method_names if hasattr(model, m)}
                 # Always include __call__ if the model is callable
                 if hasattr(model, "__call__") and callable(model):
-                    valid_methods.add("__call__")
+                    allowed_methods.add("__call__")
 
-            model_info[attr_name] = (model_ref, valid_methods)
+            model_info[attr_name] = (model_ref, allowed_methods)
             # Set the attribute to None in skeleton to save memory
             setattr(pipeline_skeleton, attr_name, None)
 
     return pipeline_skeleton, model_info
-
-
-def load_pipeline_for_tasks(
-    pipeline_skeleton: T,
-    model_info: dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]],
-) -> T:
-    """
-    Load a pipeline for task-based execution by creating remote model shims.
-
-    This function takes the output from prepare_pipeline (with method_names specified)
-    and creates a pipeline where model calls are executed as Ray tasks.
-
-    Args:
-        pipeline_skeleton: Pipeline skeleton from prepare_pipeline
-        model_info: Model info dict from prepare_pipeline (with valid_methods)
-
-    Returns:
-        Pipeline with models replaced by task-based shims
-
-    Example:
-        >>> # Prepare pipeline for tasks
-        >>> skeleton, model_info = prepare_pipeline(
-        ...     pipeline,
-        ...     method_names=("__call__", "forward"),
-        ...     filter_private=False
-        ... )
-        >>>
-        >>> # Load for task execution
-        >>> task_pipeline = load_pipeline_for_tasks(skeleton, model_info)
-        >>> result = task_pipeline.process(data)  # Models run in Ray tasks
-    """
-    import copy
-
-    from ray_zerocopy._internal.zerocopy import _RemoteModelShim
-
-    # Create a shallow copy and replace models with shims
-    result = copy.copy(pipeline_skeleton)
-    for attr_name, (model_ref, valid_methods) in model_info.items():
-        if valid_methods is not None:  # Only create shims if methods were tracked
-            shim = _RemoteModelShim(model_ref, valid_methods)
-            setattr(result, attr_name, shim)
-
-    return result
-
-
-def rewrite_pipeline(pipeline: T, method_names: tuple = ("__call__",)) -> T:
-    """
-    Convenience function that combines prepare_pipeline and load_pipeline_for_tasks.
-
-    Args:
-        pipeline: Pipeline object containing PyTorch models as attributes
-        method_names: Names of model methods to expose via remote tasks
-
-    Returns:
-        Pipeline with models replaced by task-based shims
-
-    Example:
-        >>> # Simple one-step API
-        >>> rewritten = rewrite_pipeline(pipeline)
-        >>> result = rewritten.process(data)  # Models run in Ray tasks
-
-        >>> # Equivalent to:
-        >>> skeleton, model_info = prepare_pipeline(
-        ...     pipeline, method_names=("__call__",), filter_private=False
-        ... )
-        >>> rewritten = load_pipeline_for_tasks(skeleton, model_info)
-    """
-    skeleton, model_info = prepare_pipeline(
-        pipeline, method_names=method_names, filter_private=False
-    )
-    return load_pipeline_for_tasks(skeleton, model_info)
-
-
-__all__ = [
-    "prepare_pipeline",
-    "load_pipeline_for_tasks",
-    "rewrite_pipeline",
-]

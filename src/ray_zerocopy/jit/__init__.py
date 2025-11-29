@@ -36,7 +36,6 @@ from .actors import (
 )
 from .rewrite import extract_tensors, extract_tensors_minimal, replace_tensors
 from .tasks import call_model, rewrite_pipeline
-from .utils import ZeroCopyModel
 
 __all__ = [
     # Actor-based functions
@@ -51,6 +50,4 @@ __all__ = [
     "extract_tensors",
     "replace_tensors",
     "extract_tensors_minimal",
-    # Utility classes
-    "ZeroCopyModel",
 ]
