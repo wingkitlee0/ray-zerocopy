@@ -3,7 +3,7 @@ from typing import Any, Protocol
 import ray
 import torch
 
-from .tasks import replace_tensors, rewrite_pipeline
+from ray_zerocopy._internal.zerocopy import replace_tensors
 
 
 class ModelContainerProtocol(Protocol):
@@ -13,8 +13,11 @@ class ModelContainerProtocol(Protocol):
 class ZeroCopyModel:
     """
     Utilities for working with zero-copy models.
-    This class provides a pair of static methods to bridge the gap between
+    This class provides static methods to bridge the gap between
     high-level rewritten models (shims) and low-level Ray ObjectRefs.
+
+    Note: For most use cases, prefer using TaskWrapper or ActorWrapper directly
+    instead of these low-level utilities.
     """
 
     @staticmethod
@@ -23,7 +26,7 @@ class ZeroCopyModel:
         Extract the underlying Ray ObjectRef from a rewritten model shim.
         This reference points to the zero-copy data (skeleton + weights) in Plasma.
 
-        :param model_shim: The rewritten model object returned by rewrite_pipeline.
+        :param model_shim: The rewritten model object returned by TaskWrapper.
         :return: ray.ObjectRef
         """
         if hasattr(model_shim, "_model_ref"):
@@ -45,7 +48,24 @@ class ZeroCopyModel:
 
     @staticmethod
     def rewrite(pipeline: ModelContainerProtocol) -> ModelContainerProtocol:
-        """A simple wrapper for the rewrite_pipeline function. For
-        more advanced use cases, use rewrite_pipeline directly."""
+        """
+        DEPRECATED: Use TaskWrapper instead for task-based execution.
 
-        return rewrite_pipeline(pipeline)
+        This is a legacy wrapper that exists for backward compatibility.
+        For new code, use:
+            from ray_zerocopy import TaskWrapper
+            wrapped = TaskWrapper(pipeline)
+        """
+        import warnings
+
+        warnings.warn(
+            "ZeroCopyModel.rewrite() is deprecated. Use TaskWrapper instead:\n"
+            "  from ray_zerocopy import TaskWrapper\n"
+            "  wrapped = TaskWrapper(pipeline)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Import here to avoid circular dependency
+        from ray_zerocopy.wrappers import TaskWrapper
+
+        return TaskWrapper(pipeline)

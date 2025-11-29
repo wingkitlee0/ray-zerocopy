@@ -5,7 +5,8 @@ Tests for the invoke module (rewrite_pipeline and call_model).
 import ray
 import torch
 
-from ray_zerocopy.nn import call_model, extract_tensors, rewrite_pipeline
+from ray_zerocopy._internal.zerocopy import call_model, extract_tensors
+from ray_zerocopy.nn import rewrite_pipeline
 
 
 def test_rewrite_pipeline_basic(sample_pipeline, simple_model, ray_cluster):

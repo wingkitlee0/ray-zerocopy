@@ -19,117 +19,34 @@ with Ray Data map_batches and ActorPoolStrategy.
 
 import copy
 import warnings
-from typing import Any, Optional, TypeVar
+from typing import Optional, TypeVar
 
 import ray
-import torch
 
-from .rewrite import extract_tensors, replace_tensors, replace_tensors_direct
+from ray_zerocopy._internal.zerocopy import (
+    replace_tensors,
+    replace_tensors_direct,
+)
+
+from .rewrite import prepare_pipeline
 
 T = TypeVar("T")
 
 
-def prepare_model_for_actors(model: torch.nn.Module) -> ray.ObjectRef:
-    """
-    Prepare a PyTorch model for zero-copy loading across multiple Ray actors.
-
-    This is a low-level API. For most use cases, consider using
-    :class:`ray_zerocopy.ActorWrapper` for a higher-level interface.
-
-    This function extracts the model weights and stores them in Ray's object store,
-    enabling multiple actors to load the same model without duplicating memory.
-
-    :param model: PyTorch model to prepare
-    :returns: Ray ObjectRef containing the model skeleton and weights
-
-    Example:
-        >>> model = YourModel()
-        >>> model_ref = prepare_model_for_actors(model)
-        >>>
-        >>> class InferenceActor:
-        ...     def __init__(self, model_ref):
-        ...         self.model = load_model_in_actor(model_ref)
-        ...
-        ...     def __call__(self, batch):
-        ...         return self.model(batch["data"])
-        >>>
-        >>> # Use with Ray Data
-        >>> ds.map_batches(
-        ...     InferenceActor,
-        ...     fn_constructor_kwargs={"model_ref": model_ref},
-        ...     compute=ActorPoolStrategy(size=4)
-        ... )
-    """
-    return ray.put(extract_tensors(model))
-
-
-def load_model_in_actor(
-    model_ref: ray.ObjectRef, device: Optional[str] = None, use_fast_load: bool = False
-) -> torch.nn.Module:
-    """
-    Load a model inside a Ray actor from the object store using zero-copy.
-
-    This function reconstructs the model from the reference created by
-    :func:`prepare_model_for_actors`. The model weights are loaded via zero-copy
-    from Ray's object store (Plasma).
-
-    :param model_ref: ObjectRef from :func:`prepare_model_for_actors`
-    :param device: Device to move the model to (e.g., "cuda:0", "cpu").
-                   If None, model stays on CPU
-    :param use_fast_load: If True, use the faster but slightly riskier
-                          replace_tensors_direct. Default False.
-    :returns: Reconstructed PyTorch model ready for inference
-
-    Example:
-        >>> # Inside an actor's __init__
-        >>> def __init__(self, model_ref):
-        ...     self.model = load_model_in_actor(model_ref, device="cuda:0")
-    """
-    # Suppress PyTorch warnings about immutable tensors
-    warnings.filterwarnings("ignore", message="The given NumPy array is not writable")
-
-    # Get the model skeleton and weights from the object store (zero-copy)
-    model_skeleton, model_weights = ray.get(model_ref)
-
-    # Reconstruct the model
-    if use_fast_load:
-        replace_tensors_direct(model_skeleton, model_weights)
-    else:
-        replace_tensors(model_skeleton, model_weights)
-
-    # Move to specified device if needed
-    if device is not None:
-        model_skeleton = model_skeleton.to(device)
-
-    # Ensure model is in eval mode
-    model_skeleton.eval()
-
-    return model_skeleton
-
-
-def rewrite_pipeline_for_actors(
-    pipeline: Any,
+def prepare_pipeline_for_actors(
+    pipeline: T,
     model_attr_names: Optional[list] = None,
-    use_fast_load: bool = False,
-) -> tuple[Any, dict[str, ray.ObjectRef]]:
+) -> tuple[T, dict[str, ray.ObjectRef]]:
     """
     Prepare a pipeline object with PyTorch models for use in Ray actors.
 
-    This is a low-level API. For most use cases, consider using
-    :class:`ray_zerocopy.ActorWrapper` for a higher-level interface.
-
     This function extracts all PyTorch models from a pipeline object and stores
-    them in Ray's object store. It returns a factory function that can reconstruct
-    the pipeline with loaded models inside each actor.
-
-    Unlike :func:`rewrite_pipeline` from invoke.py, this does NOT create nested
-    remote tasks. Instead, models are loaded directly into each actor's memory
-    space using zero-copy from the object store.
+    them in Ray's object store. Returns a skeleton and model references dict
+    that can be used to reconstruct the pipeline inside actors.
 
     :param pipeline: Pipeline object containing PyTorch models as attributes
     :param model_attr_names: List of attribute names that are models. If None,
                              auto-discovers all torch.nn.Module attributes
-    :param use_fast_load: Whether to use fast loading method
     :returns: Tuple of (pipeline_skeleton, model_refs_dict)
 
     Example:
@@ -144,53 +61,26 @@ def rewrite_pipeline_for_actors(
         >>>
         >>> # Prepare pipeline for actors
         >>> pipeline = Pipeline()
-        >>> pipeline_skeleton, model_refs = rewrite_pipeline_for_actors(pipeline)
+        >>> skeleton, model_refs = prepare_pipeline_for_actors(pipeline)
         >>>
         >>> class InferenceActor:
-        ...     def __init__(self, pipeline_skeleton, model_refs):
-        ...         self.pipeline = load_pipeline_in_actor(
-        ...             pipeline_skeleton, model_refs
-        ...         )
+        ...     def __init__(self, skeleton, model_refs):
+        ...         self.pipeline = load_pipeline_for_actors(skeleton, model_refs)
         ...
         ...     def __call__(self, batch):
         ...         return self.pipeline(batch["data"])
-        >>>
-        >>> # Use with Ray Data
-        >>> ds.map_batches(
-        ...     InferenceActor,
-        ...     fn_constructor_kwargs={
-        ...         "pipeline_skeleton": pipeline_skeleton,
-        ...         "model_refs": model_refs
-        ...     },
-        ...     compute=ActorPoolStrategy(size=4)
-        ... )
     """
-    # Auto-discover model attributes if not specified
-    if model_attr_names is None:
-        model_attr_names = [
-            name
-            for name in dir(pipeline)
-            if not name.startswith("_")
-            and isinstance(getattr(pipeline, name), torch.nn.Module)
-        ]
-
-    # Create a shallow copy of the pipeline
-    pipeline_skeleton = copy.copy(pipeline)
-
-    # Extract and store each model in the object store
-    model_refs = {}
-    for attr_name in model_attr_names:
-        model = getattr(pipeline, attr_name)
-        if isinstance(model, torch.nn.Module):
-            # Directly store extracted tensors in object store (no extra layer)
-            model_refs[attr_name] = ray.put(extract_tensors(model))
-            # Set the attribute to None in skeleton to save memory
-            setattr(pipeline_skeleton, attr_name, None)
-
-    return pipeline_skeleton, model_refs
+    skeleton, model_info = prepare_pipeline(
+        pipeline,
+        model_attr_names=model_attr_names,
+        method_names=None,  # No method tracking for actors
+        filter_private=True,
+    )
+    # Convert to simpler dict format for actors (no method tracking needed)
+    return skeleton, {k: ref for k, (ref, _) in model_info.items()}
 
 
-def load_pipeline_in_actor(
+def load_pipeline_for_actors(
     pipeline_skeleton: T,
     model_refs: dict[str, ray.ObjectRef],
     device: Optional[str] = None,
@@ -202,29 +92,47 @@ def load_pipeline_in_actor(
     This function should be called in an actor's __init__ method to load
     the models from the object store using zero-copy.
 
-    :param pipeline_skeleton: Pipeline skeleton from :func:`rewrite_pipeline_for_actors`
-    :param model_refs: Model references dict from :func:`rewrite_pipeline_for_actors`
-    :param device: Device to load models on (e.g., "cuda:0")
-    :param use_fast_load: Whether to use fast loading method
+    :param pipeline_skeleton: Pipeline skeleton from :func:`prepare_pipeline_for_actors`
+    :param model_refs: Model references dict from :func:`prepare_pipeline_for_actors`
+    :param device: Device to load models on (e.g., "cuda:0", "cpu").
+                   If None, models remain on CPU
+    :param use_fast_load: Whether to use faster but slightly riskier loading method.
+                         If True, uses replace_tensors_direct. Default False.
     :returns: Pipeline object with models loaded and ready for inference
 
     Example:
         >>> # Inside actor's __init__
-        >>> def __init__(self, pipeline_skeleton, model_refs):
-        ...     self.pipeline = load_pipeline_in_actor(
-        ...         pipeline_skeleton,
+        >>> def __init__(self, skeleton, model_refs):
+        ...     self.pipeline = load_pipeline_for_actors(
+        ...         skeleton,
         ...         model_refs,
         ...         device="cuda:0"
         ...     )
     """
+    # Suppress PyTorch warnings about immutable tensors
+    warnings.filterwarnings("ignore", message="The given NumPy array is not writable")
+
     # Create a copy of the skeleton
     pipeline = copy.copy(pipeline_skeleton)
 
     # Load each model from the object store
     for attr_name, model_ref in model_refs.items():
-        model = load_model_in_actor(
-            model_ref, device=device, use_fast_load=use_fast_load
-        )
-        setattr(pipeline, attr_name, model)
+        # Get the model skeleton and weights from the object store (zero-copy)
+        model_skeleton, model_weights = ray.get(model_ref)
+
+        # Reconstruct the model
+        if use_fast_load:
+            replace_tensors_direct(model_skeleton, model_weights)
+        else:
+            replace_tensors(model_skeleton, model_weights)
+
+        # Move to specified device if needed
+        if device is not None:
+            model_skeleton = model_skeleton.to(device)
+
+        # Ensure model is in eval mode
+        model_skeleton.eval()
+
+        setattr(pipeline, attr_name, model_skeleton)
 
     return pipeline

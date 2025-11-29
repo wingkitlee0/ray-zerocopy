@@ -1,8 +1,9 @@
 """
-Memory benchmark comparing three approaches:
+Memory benchmark comparing four approaches:
 1. Normal (no zero-copy) - Each actor has its own model copy
 2. Actor zero-copy - Actors load model from object store with zero-copy using ActorWrapper
 3. Task zero-copy - TaskWrapper approach (spawns Ray tasks from actors for each call)
+4. Model zero-copy - ModelWrapper approach (cleaner API for zero-copy model loading)
 
 Usage:
     # Normal (baseline)
@@ -13,6 +14,9 @@ Usage:
 
     # Task zero-copy (TaskWrapper - spawns tasks, less efficient for actors)
     python benchmark_actor_memory.py --mode task --workers 4
+
+    # Model zero-copy (ModelWrapper - cleaner API)
+    python benchmark_actor_memory.py --mode model --workers 4
 """
 
 import argparse
@@ -27,9 +31,10 @@ import ray
 import torch
 from ray.data import ActorPoolStrategy
 
-from ray_zerocopy import ActorWrapper, TaskWrapper
+from ray_zerocopy import ActorWrapper, ModelWrapper, TaskWrapper
 from ray_zerocopy.benchmark import (
     create_large_model,
+    estimate_model_size_mb,
     get_memory_mb,
     monitor_memory_context,
 )
@@ -145,13 +150,45 @@ class TaskZeroCopyActor:
         }
 
 
+class ModelWrapperActor:
+    """Actor that loads model using ModelWrapper (cleaner API for zero-copy)."""
+
+    def __init__(self, model_wrapper: ModelWrapper):
+        self.pid = os.getpid()
+        with log_memory(f"ModelWrapper ZeroCopy {self.pid}"):
+            # Use ModelWrapper.to_pipeline() to reconstruct the model with zero-copy
+            self.model = model_wrapper.to_pipeline()
+
+    def __call__(self, batch: dict[str, np.ndarray]):
+        with torch.no_grad():
+            batch_size = int(batch["size"][0])
+            inputs = torch.randn(batch_size, 5000)
+            outputs = self.model(inputs)
+
+        # Measure memory after inference
+        gc.collect()
+        rss_mb = get_memory_mb(self.pid)
+        try:
+            process = psutil.Process(self.pid)
+            uss_mb = process.memory_full_info().uss / 1024 / 1024
+        except:
+            uss_mb = 0
+
+        return {
+            "result": [outputs.shape[0]],
+            "memory_rss_mb": [rss_mb],
+            "memory_uss_mb": [uss_mb],
+            "actor_pid": [self.pid],
+        }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Memory benchmark for Ray Data actors")
     parser.add_argument(
         "--mode",
-        choices=["normal", "actor", "task"],
+        choices=["normal", "actor", "task", "model"],
         required=True,
-        help="Mode: normal (no zero-copy), actor (new zero-copy), task (old rewrite_pipeline)",
+        help="Mode: normal (no zero-copy), actor (ActorWrapper), task (TaskWrapper), model (ModelWrapper)",
     )
     parser.add_argument("--workers", type=int, default=4, help="Number of workers")
     parser.add_argument(
@@ -175,9 +212,7 @@ def main():
     # Create model
     print("\nCreating large model (~500MB)...")
     model = create_large_model()
-    model_size_mb = (
-        sum(p.numel() * p.element_size() for p in model.parameters()) / 1024 / 1024
-    )
+    model_size_mb = estimate_model_size_mb(model)
     print(f"Model size: {model_size_mb:.1f} MB")
 
     ctx = ray.data.DataContext.get_current()
@@ -241,6 +276,17 @@ def main():
                 batch_size=1,
                 compute=ActorPoolStrategy(size=args.workers),
             )
+
+        elif args.mode == "model":
+            model_wrapper = ModelWrapper.from_model(model)
+
+            results = ds.map_batches(
+                ModelWrapperActor,
+                fn_constructor_kwargs={"model_wrapper": model_wrapper},
+                batch_size=1,
+                compute=ActorPoolStrategy(size=args.workers),
+            )
+
         else:
             raise ValueError(f"Invalid mode: {args.mode}")
 
@@ -320,8 +366,8 @@ def main():
     if num_actors > 0:
         print(f"  Actors detected: {num_actors}")
         print("\n  MEASURED (from actors during inference):")
-        print(f"    Total RSS: {total_rss:.0f} MB (across {num_actors} actors)")
-        print(f"    Total USS: {total_uss:.0f} MB (private memory)")
+        print(f"    Total RSS (max): {total_rss:.0f} MB (across {num_actors} actors)")
+        print(f"    Total USS (max): {total_uss:.0f} MB (private memory)")
         print(f"    Avg RSS/actor: {avg_rss:.0f} MB")
         print(f"    Avg USS/actor: {avg_uss:.0f} MB")
 
@@ -340,6 +386,7 @@ def main():
     )
     print(f"    Actor mode:  ~{model_size_mb:.0f} MB (shared via zero-copy)")
     print(f"    Task mode:   ~{model_size_mb:.0f} MB (shared but loads on each call)")
+    print(f"    Model mode:  ~{model_size_mb:.0f} MB (shared via zero-copy)")
 
     # Calculate efficiency if we have data
     if num_actors > 0 and args.mode != "normal":

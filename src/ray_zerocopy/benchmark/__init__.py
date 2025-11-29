@@ -2,6 +2,7 @@
 
 from .model import create_large_model
 from .monitor import (
+    estimate_model_size_mb,
     get_memory_mb,
     monitor_memory,
     monitor_memory_context,
@@ -12,4 +13,5 @@ __all__ = [
     "get_memory_mb",
     "monitor_memory",
     "monitor_memory_context",
+    "estimate_model_size_mb",
 ]

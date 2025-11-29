@@ -71,7 +71,7 @@ def prepare_jit_model_for_actors(jit_model: torch.jit.ScriptModule) -> ray.Objec
     if not isinstance(jit_model, torch.jit.ScriptModule):
         raise TypeError(
             f"Expected torch.jit.ScriptModule, got {type(jit_model)}. "
-            "Use ray_zerocopy.prepare_model_for_actors() for regular nn.Module models."
+            "Use ray_zerocopy.nn functions for regular nn.Module models."
         )
     return ray.put(extract_tensors(jit_model))
 
@@ -118,7 +118,7 @@ def load_jit_model_in_actor(
     return model
 
 
-def rewrite_pipeline_for_actors(
+def prepare_pipeline_for_actors(
     pipeline: T,
     model_attr_names: Optional[list] = None,
 ) -> tuple[T, dict[str, ray.ObjectRef]]:
@@ -159,11 +159,11 @@ def rewrite_pipeline_for_actors(
         >>>
         >>> # Prepare pipeline for actors
         >>> pipeline = Pipeline()
-        >>> pipeline_skeleton, model_refs = rewrite_pipeline_for_actors(pipeline)
+        >>> pipeline_skeleton, model_refs = prepare_pipeline_for_actors(pipeline)
         >>>
         >>> class InferenceActor:
         ...     def __init__(self, pipeline_skeleton, model_refs):
-        ...         self.pipeline = load_pipeline_in_actor(
+        ...         self.pipeline = load_pipeline_for_actors(
         ...             pipeline_skeleton, model_refs
         ...         )
         ...
@@ -205,7 +205,7 @@ def rewrite_pipeline_for_actors(
     return pipeline_skeleton, model_refs
 
 
-def load_pipeline_in_actor(
+def load_pipeline_for_actors(
     pipeline_skeleton: T,
     model_refs: dict[str, ray.ObjectRef],
     device: Optional[str] = None,
@@ -217,8 +217,8 @@ def load_pipeline_in_actor(
     the TorchScript models from the object store using zero-copy.
 
     Args:
-        pipeline_skeleton: Pipeline skeleton from rewrite_pipeline_for_actors()
-        model_refs: Model references dict from rewrite_pipeline_for_actors()
+        pipeline_skeleton: Pipeline skeleton from prepare_pipeline_for_actors()
+        model_refs: Model references dict from prepare_pipeline_for_actors()
         device: Device to load models on (e.g., "cuda:0")
 
     Returns:
@@ -227,7 +227,7 @@ def load_pipeline_in_actor(
     Example:
         >>> # Inside actor's __init__
         >>> def __init__(self, pipeline_skeleton, model_refs):
-        ...     self.pipeline = load_pipeline_in_actor(
+        ...     self.pipeline = load_pipeline_for_actors(
         ...         pipeline_skeleton,
         ...         model_refs,
         ...         device="cuda:0"

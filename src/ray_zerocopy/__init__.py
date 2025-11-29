@@ -1,3 +1,4 @@
+from .model_wrappers import ModelWrapper
 from .wrappers import ActorWrapper, JITActorWrapper, JITTaskWrapper, TaskWrapper
 
 __all__ = [
@@ -6,4 +7,5 @@ __all__ = [
     "ActorWrapper",
     "JITTaskWrapper",
     "JITActorWrapper",
+    "ModelWrapper",
 ]

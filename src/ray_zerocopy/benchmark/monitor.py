@@ -6,6 +6,14 @@ import time
 from contextlib import contextmanager
 
 import psutil
+import torch
+
+
+def estimate_model_size_mb(model: torch.nn.Module) -> float:
+    """Estimate model size in MB."""
+    total_params = sum(p.numel() * p.element_size() for p in model.parameters())
+    return total_params / 1024 / 1024
+
 
 USS_UNAVAILABLE_MESSAGE = """
 Note: USS (Unique Set Size) cross-process monitoring is not available on macOS

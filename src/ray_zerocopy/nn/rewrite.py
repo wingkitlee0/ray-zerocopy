@@ -1,5 +1,4 @@
 #
-#  Copyright (c) 2021, 2022 IBM Corp.
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
@@ -14,150 +13,169 @@
 #
 
 """
-PyTorch model rewrites related to zero-copy model loading. These rewrites allow
-users to separate a model into its weights and graph, so that the weights can
-be loaded via a zero-copy mechanism such as `ray.get()`, then plugged into an
-empty version of the graph.
+Core generic pipeline preparation logic.
+
+This module provides the generic prepare_pipeline() function that can be
+customized for both task-based and actor-based execution patterns.
 """
 
 import copy
-import warnings
-from typing import Dict, List, Tuple
+from typing import Optional, Set, TypeVar
 
+import ray
 import torch
 
+from ray_zerocopy._internal.zerocopy import extract_tensors
 
-def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
+T = TypeVar("T")
+
+
+def prepare_pipeline(
+    pipeline: T,
+    model_attr_names: Optional[list] = None,
+    method_names: Optional[tuple] = None,
+    filter_private: bool = False,
+) -> tuple[T, dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]]:
     """
-    Remove the tensors from a PyTorch model, convert them to NumPy
-    arrays, and return the stripped model and tensors.
+    Generic pipeline preparation for both task-based and actor-based execution.
 
-    :param m: Root node of a PyTorch model encoded as a graph of subclasses of
-        :class:`torch.nn.Module`
-    :type m: torch.nn.Module
+    This function extracts all PyTorch models from a pipeline object and stores
+    them in Ray's object store. Returns a skeleton and model information dict
+    that can be used to reconstruct the pipeline for either tasks or actors.
 
-    :returns: A tuple with two elements:
-              * A deep copy of `m` in which all weight tensors have been
-                replaced by `None`
-              * The tensors that were removed from the copy of `m`, encoded as
-                a list of dictionaries. Each dictionary holds the tensors
-                associated with a single :class:`torch.nn.Module` in the
-                model's graph, indexed by parameter name. The dictionaries
-                occur in the order returned by :func:`m.named_modules`
+    :param pipeline: Pipeline object containing PyTorch models as attributes
+    :param model_attr_names: List of attribute names that are models. If None,
+                             auto-discovers all torch.nn.Module attributes
+    :param method_names: Names of model methods to expose via remote tasks.
+                        If None, no method tracking (actor mode).
+                        If provided, tracks methods (task mode).
+    :param filter_private: If True, exclude underscore-prefixed attributes
+                          during auto-discovery. Typically True for actors,
+                          False for tasks.
+    :returns: Tuple of (pipeline_skeleton, model_info_dict) where model_info_dict
+              maps attribute names to (model_ref, valid_methods) tuples.
+              valid_methods is None in actor mode, Set[str] in task mode.
+
+    Example - Task mode:
+        >>> skeleton, model_info = prepare_pipeline(
+        ...     pipeline,
+        ...     method_names=("__call__", "forward"),
+        ...     filter_private=False
+        ... )
+
+    Example - Actor mode:
+        >>> skeleton, model_info = prepare_pipeline(
+        ...     pipeline,
+        ...     method_names=None,
+        ...     filter_private=True
+        ... )
     """
-    tensors = []
-    for _, module in m.named_modules():
-        # Store the tensors in Python dictionaries
-        params = {
-            name: torch.clone(param).detach().numpy()
-            for name, param in module.named_parameters(recurse=False)
-        }
-        buffers = {
-            name: torch.clone(buf).detach().numpy()
-            for name, buf in module.named_buffers(recurse=False)
-        }
-        tensors.append({"params": params, "buffers": buffers})
+    # Auto-discover model attributes if not specified
+    if model_attr_names is None:
+        model_attr_names = [
+            name
+            for name in dir(pipeline)
+            if (not filter_private or not name.startswith("_"))
+            and isinstance(getattr(pipeline, name), torch.nn.Module)
+        ]
 
-    # Make a copy of the original model and strip all tensors and
-    # temporary buffers out of the copy.
-    m_copy = copy.deepcopy(m)
-    for _, module in m_copy.named_modules():
-        for name in [name for name, _ in module.named_parameters(recurse=False)] + [
-            name for name, _ in module.named_buffers(recurse=False)
-        ]:
-            setattr(module, name, None)
+    # Create a shallow copy of the pipeline
+    pipeline_skeleton = copy.copy(pipeline)
 
-    # Make sure the copy is configured for inference.
-    m_copy.train(False)
-    return m_copy, tensors
+    # Extract and store each model in the object store
+    model_info = {}
+    for attr_name in model_attr_names:
+        model = getattr(pipeline, attr_name)
+        if isinstance(model, torch.nn.Module):
+            # Store extracted tensors in object store
+            model_ref = ray.put(extract_tensors(model))
+
+            # Track methods only if method_names provided (task mode)
+            valid_methods = None
+            if method_names is not None:
+                valid_methods = {m for m in method_names if hasattr(model, m)}
+                # Always include __call__ if the model is callable
+                if hasattr(model, "__call__") and callable(model):
+                    valid_methods.add("__call__")
+
+            model_info[attr_name] = (model_ref, valid_methods)
+            # Set the attribute to None in skeleton to save memory
+            setattr(pipeline_skeleton, attr_name, None)
+
+    return pipeline_skeleton, model_info
 
 
-def _make_tensor_from_array(array):
+def load_pipeline_for_tasks(
+    pipeline_skeleton: T,
+    model_info: dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]],
+) -> T:
     """
-    Create a PyTorch tensor from a NumPy array, avoiding copies if possible.
+    Load a pipeline for task-based execution by creating remote model shims.
 
-    Attempts to create a tensor without copying using torch.as_tensor().
-    If this fails (e.g., due to array being read-only or incompatible),
-    falls back to creating a tensor from a copy of the array.
+    This function takes the output from prepare_pipeline (with method_names specified)
+    and creates a pipeline where model calls are executed as Ray tasks.
 
-    :param array: NumPy array to convert to a PyTorch tensor
-    :returns: PyTorch tensor, either zero-copy or from a copy of the input
+    :param pipeline_skeleton: Pipeline skeleton from prepare_pipeline
+    :param model_info: Model info dict from prepare_pipeline (with valid_methods)
+    :returns: Pipeline with models replaced by task-based shims
+
+    Example:
+        >>> # Prepare pipeline for tasks
+        >>> skeleton, model_info = prepare_pipeline(
+        ...     pipeline,
+        ...     method_names=("__call__", "forward"),
+        ...     filter_private=False
+        ... )
+        >>>
+        >>> # Load for task execution
+        >>> task_pipeline = load_pipeline_for_tasks(skeleton, model_info)
+        >>> result = task_pipeline.process(data)  # Models run in Ray tasks
     """
-    try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message="The given NumPy array is not writable"
-            )
-            return torch.as_tensor(array)
-    except Exception:
-        # Fallback to copy if zero-copy conversion fails
-        return torch.as_tensor(array.copy())
+    import copy
+
+    from ray_zerocopy._internal.zerocopy import _RemoteModelShim
+
+    # Create a shallow copy and replace models with shims
+    result = copy.copy(pipeline_skeleton)
+    for attr_name, (model_ref, valid_methods) in model_info.items():
+        if valid_methods is not None:  # Only create shims if methods were tracked
+            shim = _RemoteModelShim(model_ref, valid_methods)
+            setattr(result, attr_name, shim)
+
+    return result
 
 
-def replace_tensors(m: torch.nn.Module, tensors: List[Dict]):
+def rewrite_pipeline(pipeline: T, method_names: tuple = ("__call__",)) -> T:
     """
-    The inverse operation of :func:`extract_tensors`. Restores the tensors that
-    :func:`extract_tensors` stripped out of a  PyTorch model. This restore operation
-    involves zero copying of data and results in a model that can be immediately
-    used for CPU-based inference. To avoid copying, this function modifies the target
-    model in place.
+    Convenience function that combines prepare_pipeline and load_pipeline_for_tasks.
 
-    :param m: Root node of a PyTorch model encoded as a graph of subclasses of
-        :class:`torch.nn.Module`. Usually this parameter contains a model that has been
-        stripped of its weights by :funct:`extract_tensors`. **Modified in place.**
-        If any weights are present in `m`, this function will replace them.
-    :param tensors: The tensors to be inserted into `m`, encoded as a list of
-        dictionaries. Each dictionary holds the tensors associated with a single
-        :class:`torch.nn.Module` in the model's graph, indexed by parameter name.
-        The dictionaries occur in the order returned by :func:`m.named_modules`
+    This is a simplified API for task-based execution that matches the original
+    IBM interface. For more control, use prepare_pipeline + load_pipeline_for_tasks
+    separately.
+
+    :param pipeline: Pipeline object containing PyTorch models as attributes
+    :param method_names: Names of model methods to expose via remote tasks
+    :returns: Pipeline with models replaced by task-based shims
+
+    Example:
+        >>> # Simple one-step API
+        >>> rewritten = rewrite_pipeline(pipeline)
+        >>> result = rewritten.process(data)  # Models run in Ray tasks
+
+        >>> # Equivalent to:
+        >>> skeleton, model_info = prepare_pipeline(
+        ...     pipeline, method_names=("__call__",), filter_private=False
+        ... )
+        >>> rewritten = load_pipeline_for_tasks(skeleton, model_info)
     """
-    with torch.inference_mode():
-        modules = [module for _, module in m.named_modules()]
-        for module, tensor_dict in zip(modules, tensors):
-            # There are separate APIs to set parameters and buffers.
-            for name, array in tensor_dict["params"].items():
-                tensor = _make_tensor_from_array(array)
-                module.register_parameter(
-                    name, torch.nn.Parameter(tensor, requires_grad=False)
-                )
-            for name, array in tensor_dict["buffers"].items():
-                tensor = _make_tensor_from_array(array)
-                module.register_buffer(name, tensor)
+    skeleton, model_info = prepare_pipeline(
+        pipeline, method_names=method_names, filter_private=False
+    )
+    return load_pipeline_for_tasks(skeleton, model_info)
 
 
-def replace_tensors_direct(m: torch.nn.Module, tensors: List[Dict]):
-    """
-    A version of :func:`replace_tensors` that takes a faster but slightly dangerous
-    shortcut.
-
-    Like :func:`replace_tenosrs`, this function restores the tensors that
-    :func:`extract_tensors` stripped out of a PyTorch model. However, this function
-    skips the step of wrapping the restored tensors in ``torch.nn.Parameters`` objects.
-    Skipping this step makes the restore operation go about 20% faster in testing on
-    ``bert-base-uncased``, but **may impact the correctness of some models**.
-    Be sure to test this method carefully before using it on a particular PyTorch model.
-
-    Like :func:`replace_tensors`, this function modifies the model in place to avoid
-    copying data.
-
-    :param m: Root node of a PyTorch model encoded as a graph of subclasses of
-        :class:`torch.nn.Module`. Usually this parameter contains a model that has been
-        stripped of its weights by :funct:`extract_tensors`. **Modified in place.**
-        If any weights are present in `m`, this function will replace them.
-    :param tensors: The tensors to be inserted into `m`, encoded as a list of
-        dictionaries. Each dictionary holds the tensors associated with a single
-        :class:`torch.nn.Module` in the model's graph, indexed by parameter name.
-        The dictionaries occur in the order returned by :func:`m.named_modules`
-    """
-    with torch.inference_mode():
-        modules = [module for _, module in m.named_modules()]
-        for module, tensor_dict in zip(modules, tensors):
-            # There are separate APIs to set parameters and buffers.
-            for name, array in tensor_dict["params"].items():
-                tensor = _make_tensor_from_array(array)
-                # Super fast, somewhat risky version avoids
-                # wrapping parameters in Parameters objects.
-                module._parameters[name] = tensor
-            for name, array in tensor_dict["buffers"].items():
-                tensor = _make_tensor_from_array(array)
-                module.register_buffer(name, tensor)
+__all__ = [
+    "prepare_pipeline",
+    "load_pipeline_for_tasks",
+    "rewrite_pipeline",
+]
