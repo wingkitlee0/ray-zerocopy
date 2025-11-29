@@ -11,7 +11,8 @@ import psutil
 import ray
 import torch
 
-from ray_zerocopy.nn import ZeroCopyModel, extract_tensors, rewrite_pipeline
+from ray_zerocopy._internal.zerocopy import extract_tensors
+from ray_zerocopy.nn import ZeroCopyModel, rewrite_pipeline
 
 
 def get_worker_memory_mb():

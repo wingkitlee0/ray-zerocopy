@@ -109,7 +109,12 @@ class TaskWrapper(WrapperMixin[T], Generic[T]):
             pipeline: Object containing torch.nn.Module models as attributes
             method_names: Model methods to expose via remote tasks
         """
-        self._rewritten = rzc_nn.rewrite_pipeline(pipeline, method_names)
+        # Use the new prepare_pipeline and load_pipeline_for_tasks API
+        skeleton, model_info = rzc_nn.prepare_pipeline(
+            pipeline, method_names=method_names, filter_private=False
+        )
+
+        self._rewritten = rzc_nn.load_pipeline_for_tasks(skeleton, model_info)
 
         self._configure_wrapper(pipeline)
         self._preserve_call_signature(pipeline)
@@ -267,7 +272,7 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
             model_attr_names: List of model attribute names (auto-detected if None)
             use_fast_load: Use faster but riskier loading method
         """
-        self._skeleton, self._model_refs = rzc_nn.rewrite_pipeline_for_actors(
+        self._skeleton, self._model_refs = rzc_nn.prepare_pipeline_for_actors(
             pipeline,
             model_attr_names,
         )
@@ -298,7 +303,7 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
             ...     def __call__(self, batch):
             ...         return self.pipeline(batch["data"])
         """
-        return rzc_nn.load_pipeline_in_actor(
+        return rzc_nn.load_pipeline_for_actors(
             self._skeleton,
             self._model_refs,
             device=device,
@@ -382,7 +387,7 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
             pipeline: Object containing torch.jit.ScriptModule models
             model_attr_names: List of model attribute names (auto-detected if None)
         """
-        self._skeleton, self._model_refs = rzc_jit.rewrite_pipeline_for_actors(
+        self._skeleton, self._model_refs = rzc_jit.prepare_pipeline_for_actors(
             pipeline,
             model_attr_names,
         )
@@ -425,7 +430,7 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
             ...         return self.pipeline(batch["data"])
         """
 
-        return rzc_jit.load_pipeline_in_actor(
+        return rzc_jit.load_pipeline_for_actors(
             self._skeleton,
             self._model_refs,
             device=device,
