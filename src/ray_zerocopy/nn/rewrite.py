@@ -43,18 +43,20 @@ def prepare_pipeline(
     them in Ray's object store. Returns a skeleton and model information dict
     that can be used to reconstruct the pipeline for either tasks or actors.
 
-    :param pipeline: Pipeline object containing PyTorch models as attributes
-    :param model_attr_names: List of attribute names that are models. If None,
-                             auto-discovers all torch.nn.Module attributes
-    :param method_names: Names of model methods to expose via remote tasks.
-                        If None, no method tracking (actor mode).
-                        If provided, tracks methods (task mode).
-    :param filter_private: If True, exclude underscore-prefixed attributes
-                          during auto-discovery. Typically True for actors,
-                          False for tasks.
-    :returns: Tuple of (pipeline_skeleton, model_info_dict) where model_info_dict
-              maps attribute names to (model_ref, valid_methods) tuples.
-              valid_methods is None in actor mode, Set[str] in task mode.
+    Args:
+        pipeline: Pipeline object containing PyTorch models as attributes
+        model_attr_names: List of attribute names that are models. If None,
+            auto-discovers all torch.nn.Module attributes
+        method_names: Names of model methods to expose via remote tasks.
+            If None, no method tracking (actor mode).
+            If provided, tracks methods (task mode).
+        filter_private: If True, exclude underscore-prefixed attributes
+            during auto-discovery. Typically True for actors, False for tasks.
+
+    Returns:
+        Tuple of (pipeline_skeleton, model_info_dict) where model_info_dict
+        maps attribute names to (model_ref, valid_methods) tuples.
+        valid_methods is None in actor mode, Set[str] in task mode.
 
     Example - Task mode:
         >>> skeleton, model_info = prepare_pipeline(
@@ -115,9 +117,12 @@ def load_pipeline_for_tasks(
     This function takes the output from prepare_pipeline (with method_names specified)
     and creates a pipeline where model calls are executed as Ray tasks.
 
-    :param pipeline_skeleton: Pipeline skeleton from prepare_pipeline
-    :param model_info: Model info dict from prepare_pipeline (with valid_methods)
-    :returns: Pipeline with models replaced by task-based shims
+    Args:
+        pipeline_skeleton: Pipeline skeleton from prepare_pipeline
+        model_info: Model info dict from prepare_pipeline (with valid_methods)
+
+    Returns:
+        Pipeline with models replaced by task-based shims
 
     Example:
         >>> # Prepare pipeline for tasks
@@ -149,13 +154,12 @@ def rewrite_pipeline(pipeline: T, method_names: tuple = ("__call__",)) -> T:
     """
     Convenience function that combines prepare_pipeline and load_pipeline_for_tasks.
 
-    This is a simplified API for task-based execution that matches the original
-    IBM interface. For more control, use prepare_pipeline + load_pipeline_for_tasks
-    separately.
+    Args:
+        pipeline: Pipeline object containing PyTorch models as attributes
+        method_names: Names of model methods to expose via remote tasks
 
-    :param pipeline: Pipeline object containing PyTorch models as attributes
-    :param method_names: Names of model methods to expose via remote tasks
-    :returns: Pipeline with models replaced by task-based shims
+    Returns:
+        Pipeline with models replaced by task-based shims
 
     Example:
         >>> # Simple one-step API

@@ -44,10 +44,13 @@ def prepare_pipeline_for_actors(
     them in Ray's object store. Returns a skeleton and model references dict
     that can be used to reconstruct the pipeline inside actors.
 
-    :param pipeline: Pipeline object containing PyTorch models as attributes
-    :param model_attr_names: List of attribute names that are models. If None,
-                             auto-discovers all torch.nn.Module attributes
-    :returns: Tuple of (pipeline_skeleton, model_refs_dict)
+    Args:
+        pipeline: Pipeline object containing PyTorch models as attributes
+        model_attr_names: List of attribute names that are models. If None,
+            auto-discovers all torch.nn.Module attributes
+
+    Returns:
+        Tuple of (pipeline_skeleton, model_refs_dict)
 
     Example:
         >>> class Pipeline:
@@ -92,13 +95,16 @@ def load_pipeline_for_actors(
     This function should be called in an actor's __init__ method to load
     the models from the object store using zero-copy.
 
-    :param pipeline_skeleton: Pipeline skeleton from :func:`prepare_pipeline_for_actors`
-    :param model_refs: Model references dict from :func:`prepare_pipeline_for_actors`
-    :param device: Device to load models on (e.g., "cuda:0", "cpu").
-                   If None, models remain on CPU
-    :param use_fast_load: Whether to use faster but slightly riskier loading method.
-                         If True, uses replace_tensors_direct. Default False.
-    :returns: Pipeline object with models loaded and ready for inference
+    Args:
+        pipeline_skeleton: Pipeline skeleton from prepare_pipeline_for_actors()
+        model_refs: Model references dict from prepare_pipeline_for_actors()
+        device: Device to load models on (e.g., "cuda:0", "cpu").
+            If None, models remain on CPU
+        use_fast_load: Whether to use faster but slightly riskier loading method.
+            If True, uses replace_tensors_direct. Default False.
+
+    Returns:
+        Pipeline object with models loaded and ready for inference
 
     Example:
         >>> # Inside actor's __init__

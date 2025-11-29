@@ -36,18 +36,19 @@ def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
     Remove the tensors from a PyTorch model, convert them to NumPy
     arrays, and return the stripped model and tensors.
 
-    :param m: Root node of a PyTorch model encoded as a graph of subclasses of
-        :class:`torch.nn.Module`
-    :type m: torch.nn.Module
+    Args:
+        m: Root node of a PyTorch model encoded as a graph of subclasses of
+            torch.nn.Module
 
-    :returns: A tuple with two elements:
-              * A deep copy of `m` in which all weight tensors have been
-                replaced by `None`
-              * The tensors that were removed from the copy of `m`, encoded as
-                a list of dictionaries. Each dictionary holds the tensors
-                associated with a single :class:`torch.nn.Module` in the
-                model's graph, indexed by parameter name. The dictionaries
-                occur in the order returned by :func:`m.named_modules`
+    Returns:
+        A tuple with two elements:
+        * A deep copy of `m` in which all weight tensors have been
+          replaced by `None`
+        * The tensors that were removed from the copy of `m`, encoded as
+          a list of dictionaries. Each dictionary holds the tensors
+          associated with a single torch.nn.Module in the model's graph,
+          indexed by parameter name. The dictionaries occur in the order
+          returned by m.named_modules()
     """
     tensors = []
     for _, module in m.named_modules():
@@ -78,20 +79,21 @@ def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
 
 def replace_tensors(m: torch.nn.Module, tensors: List[Dict]):
     """
-    The inverse operation of :func:`extract_tensors`. Restores the tensors that
-    :func:`extract_tensors` stripped out of a  PyTorch model. This restore operation
+    The inverse operation of extract_tensors(). Restores the tensors that
+    extract_tensors() stripped out of a PyTorch model. This restore operation
     involves zero copying of data and results in a model that can be immediately
     used for CPU-based inference. To avoid copying, this function modifies the target
     model in place.
 
-    :param m: Root node of a PyTorch model encoded as a graph of subclasses of
-        :class:`torch.nn.Module`. Usually this parameter contains a model that has been
-        stripped of its weights by :funct:`extract_tensors`. **Modified in place.**
-        If any weights are present in `m`, this function will replace them.
-    :param tensors: The tensors to be inserted into `m`, encoded as a list of
-        dictionaries. Each dictionary holds the tensors associated with a single
-        :class:`torch.nn.Module` in the model's graph, indexed by parameter name.
-        The dictionaries occur in the order returned by :func:`m.named_modules`
+    Args:
+        m: Root node of a PyTorch model encoded as a graph of subclasses of
+            torch.nn.Module. Usually this parameter contains a model that has been
+            stripped of its weights by extract_tensors(). **Modified in place.**
+            If any weights are present in `m`, this function will replace them.
+        tensors: The tensors to be inserted into `m`, encoded as a list of
+            dictionaries. Each dictionary holds the tensors associated with a single
+            torch.nn.Module in the model's graph, indexed by parameter name.
+            The dictionaries occur in the order returned by m.named_modules()
     """
     with torch.inference_mode():
         modules = [module for _, module in m.named_modules()]
@@ -109,27 +111,28 @@ def replace_tensors(m: torch.nn.Module, tensors: List[Dict]):
 
 def replace_tensors_direct(m: torch.nn.Module, tensors: List[Dict]):
     """
-    A version of :func:`replace_tensors` that takes a faster but slightly dangerous
+    A version of replace_tensors() that takes a faster but slightly dangerous
     shortcut.
 
-    Like :func:`replace_tenosrs`, this function restores the tensors that
-    :func:`extract_tensors` stripped out of a PyTorch model. However, this function
-    skips the step of wrapping the restored tensors in ``torch.nn.Parameters`` objects.
+    Like replace_tensors(), this function restores the tensors that
+    extract_tensors() stripped out of a PyTorch model. However, this function
+    skips the step of wrapping the restored tensors in torch.nn.Parameters objects.
     Skipping this step makes the restore operation go about 20% faster in testing on
-    ``bert-base-uncased``, but **may impact the correctness of some models**.
+    bert-base-uncased, but **may impact the correctness of some models**.
     Be sure to test this method carefully before using it on a particular PyTorch model.
 
-    Like :func:`replace_tensors`, this function modifies the model in place to avoid
+    Like replace_tensors(), this function modifies the model in place to avoid
     copying data.
 
-    :param m: Root node of a PyTorch model encoded as a graph of subclasses of
-        :class:`torch.nn.Module`. Usually this parameter contains a model that has been
-        stripped of its weights by :funct:`extract_tensors`. **Modified in place.**
-        If any weights are present in `m`, this function will replace them.
-    :param tensors: The tensors to be inserted into `m`, encoded as a list of
-        dictionaries. Each dictionary holds the tensors associated with a single
-        :class:`torch.nn.Module` in the model's graph, indexed by parameter name.
-        The dictionaries occur in the order returned by :func:`m.named_modules`
+    Args:
+        m: Root node of a PyTorch model encoded as a graph of subclasses of
+            torch.nn.Module. Usually this parameter contains a model that has been
+            stripped of its weights by extract_tensors(). **Modified in place.**
+            If any weights are present in `m`, this function will replace them.
+        tensors: The tensors to be inserted into `m`, encoded as a list of
+            dictionaries. Each dictionary holds the tensors associated with a single
+            torch.nn.Module in the model's graph, indexed by parameter name.
+            The dictionaries occur in the order returned by m.named_modules()
     """
     with torch.inference_mode():
         modules = [module for _, module in m.named_modules()]
@@ -156,14 +159,16 @@ def call_model(
     Ray task that uses zero-copy model loading to reconstitute a model
     from Plasma, then a method on the model.
 
-    :param model_ref: Object reference to a tuple of model skeleton
-     and model weights, as returned by :func:`extract_tensors`
-    :param args: Ordered arguments to pass to the model's method
-    :param kwargs: Keyword arguments to pass to the model's method,
-                   or `None` to pass no keyword arguments
-    :param method_name: Name of the method to call on the object
+    Args:
+        model_ref: Object reference to a tuple of model skeleton
+            and model weights, as returned by extract_tensors()
+        args: Ordered arguments to pass to the model's method
+        kwargs: Keyword arguments to pass to the model's method,
+            or None to pass no keyword arguments
+        method_name: Name of the method to call on the object
 
-    :returns: Return value from calling the specified method
+    Returns:
+        Return value from calling the specified method
     """
     if kwargs is None:
         kwargs = {}
@@ -190,23 +195,25 @@ def rewrite_pipeline_original(pipeline: Any, method_names=("__call__",)) -> Any:
     from ray_zerocopy.nn for better modularity.
 
     This is a low-level API. For most use cases, consider using
-    :class:`ray_zerocopy.TaskWrapper` for a higher-level interface.
+    ray_zerocopy.TaskWrapper for a higher-level interface.
 
     Current limitatations:
     * Only models that are stored in fields of the top-level object will be
       rewritten. This method does *not* recursively traverse child objects.
-    * Only models that are subclasses of ``torch.nn.Module`` will be rewritten.
+    * Only models that are subclasses of torch.nn.Module will be rewritten.
     * If there are multiple pointers to the same model, they will be
       treated as separate models and loaded separately onto Plasma.
-    * ``pipeline`` must be an object that will still work properly after
-      being shallow-copied with :func:`copy.copy()`
+    * pipeline must be an object that will still work properly after
+      being shallow-copied with copy.copy()
 
-    :param pipeline: Python object that wraps a model serving pipeline
-    :param method_names: Names of model methods to forward to remote classes.
+    Args:
+        pipeline: Python object that wraps a model serving pipeline
+        method_names: Names of model methods to forward to remote classes
 
-    :returns: A **shallow** copy of ``pipeline`` in which all PyTorch models
-     that are stored in fields of ``pipeline`` are replaced with wrapper
-     objects that forward calls to Ray tasks.
+    Returns:
+        A **shallow** copy of pipeline in which all PyTorch models
+        that are stored in fields of pipeline are replaced with wrapper
+        objects that forward calls to Ray tasks.
     """
     # Find all the models hanging directly off of the pipeline object.
     model_attr_names = [
@@ -262,8 +269,11 @@ def _make_tensor_from_array(array):
     If this fails (e.g., due to array being read-only or incompatible),
     falls back to creating a tensor from a copy of the array.
 
-    :param array: NumPy array to convert to a PyTorch tensor
-    :returns: PyTorch tensor, either zero-copy or from a copy of the input
+    Args:
+        array: NumPy array to convert to a PyTorch tensor
+
+    Returns:
+        PyTorch tensor, either zero-copy or from a copy of the input
     """
     try:
         with warnings.catch_warnings():

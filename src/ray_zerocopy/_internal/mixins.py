@@ -14,6 +14,7 @@ class WrapperMixin(Generic[T]):
     def _configure_wrapper(self, pipeline: T):
         """
         Common initialization for wrappers.
+
         - Stores reference to original pipeline
         - Copies class docstring
         - Preserves annotations

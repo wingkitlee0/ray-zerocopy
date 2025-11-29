@@ -136,8 +136,7 @@ def prepare_pipeline_for_actors(
     Args:
         pipeline: Pipeline object containing TorchScript models as attributes
         model_attr_names: List of attribute names that are TorchScript models.
-                         If None, auto-discovers all torch.jit.ScriptModule attributes
-        device: Device to load models on in actors (e.g., "cuda:0")
+            If None, auto-discovers all torch.jit.ScriptModule attributes
 
     Returns:
         Tuple of (pipeline_skeleton, model_refs_dict)

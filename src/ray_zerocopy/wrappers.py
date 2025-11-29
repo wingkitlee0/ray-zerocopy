@@ -270,7 +270,6 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
         Args:
             pipeline: Object containing torch.nn.Module models
             model_attr_names: List of model attribute names (auto-detected if None)
-            use_fast_load: Use faster but riskier loading method
         """
         self._skeleton, self._model_refs = rzc_nn.prepare_pipeline_for_actors(
             pipeline,
@@ -287,8 +286,8 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
 
         Args:
             device: Device to move models to after loading (e.g., "cuda:0", "cpu").
-                   If None, no device transfer is performed (models remain on the
-                   device they were reconstructed on, typically CPU from object store).
+                If None, no device transfer is performed (models remain on the
+                device they were reconstructed on, typically CPU from object store).
             _use_fast_load: Use faster but slightly riskier loading method.
 
         Returns:
@@ -414,8 +413,8 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
 
         Args:
             device: Device to move models to after loading (e.g., "cuda:0", "cpu").
-                   If None, no device transfer is performed (models remain on the
-                   device they were reconstructed on, typically CPU from object store).
+                If None, no device transfer is performed (models remain on the
+                device they were reconstructed on, typically CPU from object store).
 
         Returns:
             Pipeline object with TorchScript models loaded and ready for inference

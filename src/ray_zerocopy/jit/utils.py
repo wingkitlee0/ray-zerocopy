@@ -42,8 +42,11 @@ class ZeroCopyModel:
         Extract the underlying Ray ObjectRef from a rewritten TorchScript model shim.
         This reference points to the zero-copy data (skeleton + weights) in Plasma.
 
-        :param model_shim: The rewritten model object returned by rewrite_pipeline
-        :return: ray.ObjectRef
+        Args:
+            model_shim: The rewritten model object returned by rewrite_pipeline
+
+        Returns:
+            ray.ObjectRef
         """
         if hasattr(model_shim, "_model_ref"):
             return model_shim._model_ref
@@ -57,8 +60,11 @@ class ZeroCopyModel:
         Reconstruct a functional TorchScript model from a zero-copy ObjectRef.
         This operation maps shared memory and does not copy weight data.
 
-        :param model_ref: ray.ObjectRef pointing to (model_bytes, weights) tuple
-        :return: torch.jit.ScriptModule (ready for inference)
+        Args:
+            model_ref: ray.ObjectRef pointing to (model_bytes, weights) tuple
+
+        Returns:
+            torch.jit.ScriptModule ready for inference
         """
         model_bytes, model_weights = model_ref
         return replace_tensors(model_bytes, model_weights)
@@ -70,7 +76,10 @@ class ZeroCopyModel:
 
         For more advanced use cases, use rewrite_pipeline directly.
 
-        :param pipeline: An object containing TorchScript models
-        :return: A rewritten version with zero-copy model loading
+        Args:
+            pipeline: An object containing TorchScript models
+
+        Returns:
+            A rewritten version with zero-copy model loading
         """
         return rewrite_pipeline(pipeline)

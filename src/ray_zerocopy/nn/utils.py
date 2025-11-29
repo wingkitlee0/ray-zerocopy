@@ -26,8 +26,11 @@ class ZeroCopyModel:
         Extract the underlying Ray ObjectRef from a rewritten model shim.
         This reference points to the zero-copy data (skeleton + weights) in Plasma.
 
-        :param model_shim: The rewritten model object returned by TaskWrapper.
-        :return: ray.ObjectRef
+        Args:
+            model_shim: The rewritten model object returned by TaskWrapper
+
+        Returns:
+            ray.ObjectRef
         """
         if hasattr(model_shim, "_model_ref"):
             return model_shim._model_ref
@@ -39,8 +42,11 @@ class ZeroCopyModel:
         Reconstruct a functional PyTorch model from a zero-copy ObjectRef.
         This operation maps shared memory and does not copy weight data.
 
-        :param model_ref: ray.ObjectRef pointing to (skeleton, weights) tuple.
-        :return: torch.nn.Module (ready for inference)
+        Args:
+            model_ref: ray.ObjectRef pointing to (skeleton, weights) tuple
+
+        Returns:
+            torch.nn.Module ready for inference
         """
         model_skeleton, model_weights = model_ref
         replace_tensors(model_skeleton, model_weights)
