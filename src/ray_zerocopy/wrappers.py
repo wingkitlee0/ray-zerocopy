@@ -2,36 +2,38 @@
 Unified pipeline-based API for ray_zerocopy.
 
 This module provides a consistent, easy-to-use API for zero-copy model loading
-across different execution modes (tasks vs actors) and model types (nn.Module vs JIT).
+for TorchScript (JIT) models across different execution modes (tasks vs actors).
 
-The four wrapper classes:
-- TaskWrapper: nn.Module models executed via Ray tasks
-- ActorWrapper: nn.Module models loaded in Ray actors (for Ray Data)
+The wrapper classes:
 - JITTaskWrapper: TorchScript models executed via Ray tasks
 - JITActorWrapper: TorchScript models loaded in Ray actors (for Ray Data)
 
+For nn.Module models, use ModelWrapper from ray_zerocopy.model_wrappers:
+- ModelWrapper.for_tasks() or ModelWrapper.from_model(..., mode="task") for task-based execution
+- ModelWrapper.from_model(..., mode="actor") for actor-based execution
+
 Usage Examples:
 
-    # 1. TaskWrapper - Run nn.Module models in Ray tasks
-    >>> from ray_zerocopy import TaskWrapper
+    # 1. ModelWrapper Task Mode - Run nn.Module models in Ray tasks
+    >>> from ray_zerocopy import ModelWrapper
     >>> pipeline = MyPipeline()  # Has .encoder, .decoder as nn.Module
-    >>> wrapped = TaskWrapper(pipeline)
+    >>> wrapped = ModelWrapper.for_tasks(pipeline)
     >>> result = wrapped.process(data)  # Each model call spawns a Ray task
 
-    # 2. ActorWrapper - Run nn.Module models in Ray actors
-    >>> from ray_zerocopy import ActorWrapper
+    # 2. ModelWrapper Actor Mode - Run nn.Module models in Ray actors
+    >>> from ray_zerocopy import ModelWrapper
     >>> pipeline = MyPipeline()
-    >>> actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+    >>> model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
     >>>
     >>> class MyActor:
-    ...     def __init__(self, actor_wrapper):
-    ...         self.pipeline = actor_wrapper.load()
+    ...     def __init__(self, model_wrapper):
+    ...         self.pipeline = model_wrapper.to_pipeline()
     ...     def __call__(self, batch):
     ...         return self.pipeline(batch["data"])
     >>>
     >>> ds.map_batches(
     ...     MyActor,
-    ...     fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    ...     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     ...     compute=ActorPoolStrategy(size=4)
     ... )
 
@@ -44,7 +46,7 @@ Usage Examples:
     # 4. JITActorWrapper - Run TorchScript models in Ray actors
     >>> from ray_zerocopy import JITActorWrapper
     >>> jit_pipeline = torch.jit.trace(pipeline, example)
-    >>> actor_wrapper = JITActorWrapper(jit_pipeline, device="cuda:0")
+    >>> actor_wrapper = JITActorWrapper(jit_pipeline)
     >>>
     >>> class MyJITActor:
     ...     def __init__(self, actor_wrapper):
@@ -64,85 +66,9 @@ from typing import Generic, Optional, TypeVar
 import ray
 
 from ray_zerocopy import jit as rzc_jit
-from ray_zerocopy import nn as rzc_nn
 from ray_zerocopy._internal import WrapperMixin
 
 T = TypeVar("T")
-
-
-class TaskWrapper(WrapperMixin[T], Generic[T]):
-    """
-    Wrapper for zero-copy nn.Module inference via Ray tasks.
-
-    This wrapper takes a pipeline object (any object with torch.nn.Module attributes)
-    and rewrites it so that model inference calls are executed in Ray tasks with
-    zero-copy model loading from the object store.
-
-    Use this when you want to run inference via Ray tasks (not actors).
-    For Ray Data with ActorPoolStrategy, use ActorWrapper instead.
-    
-    **Note**: This class is now a thin wrapper around ModelWrapper for backward compatibility.
-    Consider using `ModelWrapper.for_tasks()` or `ModelWrapper.from_model(..., mode="task")` directly.
-
-    Args:
-        pipeline: Object containing torch.nn.Module models as attributes
-        method_names: Tuple of model method names to expose via remote tasks.
-                     Default is ("__call__",)
-
-    Example:
-        >>> class MyPipeline:
-        ...     def __init__(self):
-        ...         self.encoder = EncoderModel()
-        ...         self.decoder = DecoderModel()
-        ...
-        ...     def process(self, data):
-        ...         encoded = self.encoder(data)
-        ...         return self.decoder(encoded)
-        >>>
-        >>> pipeline = MyPipeline()
-        >>> wrapped = TaskWrapper(pipeline)
-        >>> result = wrapped.process(data)  # Each model call spawns a Ray task
-    """
-    
-    _wrapper: "ModelWrapper[T]"
-
-    def __init__(self, pipeline: T, method_names: tuple = ("__call__",)):
-        """
-        Initialize the TaskWrapper.
-
-        Args:
-            pipeline: Object containing torch.nn.Module models as attributes
-            method_names: Model methods to expose via remote tasks
-        """
-        from ray_zerocopy.model_wrappers import ModelWrapper
-        
-        # Delegate to ModelWrapper with task mode
-        self._wrapper = ModelWrapper.from_model(
-            pipeline,
-            mode="task",
-            method_names=method_names,
-        )
-
-    def __getstate__(self):
-        """Return state for pickling."""
-        return {
-            "_wrapper": self._wrapper,
-        }
-
-    def __setstate__(self, state):
-        """Restore state from pickling."""
-        self._wrapper = state["_wrapper"]
-
-    def __call__(self, *args, **kwargs):
-        """Forward calls to the underlying wrapper."""
-        return self._wrapper(*args, **kwargs)
-
-    def __getattr__(self, name: str):
-        """Forward attribute access to the underlying wrapper."""
-        # Avoid infinite recursion for private attributes
-        if name.startswith("_"):
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-        return getattr(self._wrapper, name)
 
 
 class JITTaskWrapper(WrapperMixin[T], Generic[T]):
@@ -212,132 +138,6 @@ class JITTaskWrapper(WrapperMixin[T], Generic[T]):
     def __getattr__(self, name: str):
         """Forward attribute access to the rewritten pipeline."""
         return getattr(self._rewritten, name)
-
-
-class ActorWrapper(WrapperMixin[T], Generic[T]):
-    """
-    Wrapper for zero-copy nn.Module inference in Ray actors.
-
-    This wrapper prepares a pipeline with torch.nn.Module models for use in
-    Ray actors, particularly with Ray Data's ActorPoolStrategy. Models are
-    stored in Ray's object store and loaded with zero-copy in each actor.
-
-    Use this when you want to run inference in Ray actors (e.g., with Ray Data).
-    For simple Ray tasks, use TaskWrapper instead.
-    
-    **Note**: This class is now a thin wrapper around ModelWrapper for backward compatibility.
-    Consider using `ModelWrapper.from_model(..., mode="actor")` directly.
-
-    Args:
-        pipeline: Object containing torch.nn.Module models as attributes
-        model_attr_names: List of attribute names that are models. If None,
-                         auto-discovers all torch.nn.Module attributes.
-        use_fast_load: Use faster but slightly riskier loading method.
-                      Default is False.
-
-    Example:
-        >>> class MyPipeline:
-        ...     def __init__(self):
-        ...         self.encoder = EncoderModel()
-        ...         self.decoder = DecoderModel()
-        ...
-        ...     def __call__(self, data):
-        ...         encoded = self.encoder(data)
-        ...         return self.decoder(encoded)
-        >>>
-        >>> # Prepare pipeline for actors
-        >>> pipeline = MyPipeline()
-        >>> actor_wrapper = ActorWrapper(pipeline)
-        >>>
-        >>> # Use in Ray Data
-        >>> class InferenceActor:
-        ...     def __init__(self, actor_wrapper):
-        ...         # Specify device at load time
-        ...         self.pipeline = actor_wrapper.load(device="cuda:0")
-        ...
-        ...     def __call__(self, batch):
-        ...         return self.pipeline(batch["data"])
-        >>>
-        >>> ds = ray.data.read_parquet("data.parquet")
-        >>> ds.map_batches(
-        ...     InferenceActor,
-        ...     fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
-        ...     compute=ActorPoolStrategy(size=4)
-        ... )
-    """
-    
-    _wrapper: "ModelWrapper[T]"
-
-    def __init__(
-        self,
-        pipeline: T,
-        model_attr_names: Optional[list] = None,
-    ):
-        """
-        Initialize the ActorWrapper.
-
-        Args:
-            pipeline: Object containing torch.nn.Module models
-            model_attr_names: List of model attribute names (auto-detected if None)
-        """
-        from ray_zerocopy.model_wrappers import ModelWrapper
-        
-        # Delegate to ModelWrapper with actor mode
-        self._wrapper = ModelWrapper.from_model(
-            pipeline,
-            mode="actor",
-            model_attr_names=model_attr_names,
-        )
-
-    def __getstate__(self):
-        """Return state for pickling."""
-        return {
-            "_wrapper": self._wrapper,
-        }
-
-    def __setstate__(self, state):
-        """Restore state from pickling."""
-        self._wrapper = state["_wrapper"]
-
-    def load(self, device: Optional[str] = None, _use_fast_load: bool = False) -> T:
-        """
-        Load the pipeline in an actor.
-
-        Call this method from within an actor's __init__ method to reconstruct
-        the pipeline with models loaded from the object store using zero-copy.
-
-        Args:
-            device: Device to move models to after loading (e.g., "cuda:0", "cpu").
-                   If None, no device transfer is performed (models remain on the
-                   device they were reconstructed on, typically CPU from object store).
-            _use_fast_load: Use faster but slightly riskier loading method.
-
-        Returns:
-            Pipeline object with models loaded and ready for inference
-
-        Example:
-            >>> class MyActor:
-            ...     def __init__(self, actor_wrapper):
-            ...         # Move to GPU after loading from object store
-            ...         self.pipeline = actor_wrapper.load(device="cuda:0")
-            ...
-            ...     def __call__(self, batch):
-            ...         return self.pipeline(batch["data"])
-        """
-        return self._wrapper.to_pipeline(device=device, _use_fast_load=_use_fast_load)
-
-    @property
-    def constructor_kwargs(self) -> dict:
-        """Get kwargs dict for Ray Data fn_constructor_kwargs.
-        
-        Returns both old and new formats for backward compatibility.
-        """
-        return {
-            "actor_wrapper": self,
-            # Also include old format for backward compatibility
-            "pipeline_skeleton": self._wrapper._skeleton,
-            "model_refs": self._wrapper._model_refs,
-        }
 
 
 class JITActorWrapper(WrapperMixin[T], Generic[T]):

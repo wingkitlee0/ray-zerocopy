@@ -62,25 +62,24 @@ def verify_actor_mode():
 
 
 def verify_backward_compatibility():
-    """Verify backward compatibility with old API."""
-    print("✓ Testing backward compatibility...")
+    """Verify backward compatibility with ModelWrapper API."""
+    print("✓ Testing ModelWrapper API...")
     
-    from ray_zerocopy import TaskWrapper, ActorWrapper
-    
-    # TaskWrapper
     model = SimpleModel()
-    task_wrapper = TaskWrapper(model)
+    
+    # Task mode
+    task_wrapper = ModelWrapper.for_tasks(model)
     test_input = torch.randn(3, 10)
     result = task_wrapper(test_input)
     assert result.shape == (3, 5)
-    print("  ✓ TaskWrapper backward compatibility works")
+    print("  ✓ Task mode works")
     
-    # ActorWrapper
-    actor_wrapper = ActorWrapper(model)
-    loaded = actor_wrapper.load(device="cpu")
+    # Actor mode
+    actor_wrapper = ModelWrapper.from_model(model, mode="actor")
+    loaded = actor_wrapper.to_pipeline(device="cpu")
     result = loaded(test_input)
     assert result.shape == (3, 5)
-    print("  ✓ ActorWrapper backward compatibility works")
+    print("  ✓ Actor mode works")
 
 
 def main():

@@ -1,22 +1,18 @@
 """
-Memory benchmark comparing four approaches:
+Memory benchmark comparing three approaches:
 1. Normal (no zero-copy) - Each actor has its own model copy
-2. Actor zero-copy - Actors load model from object store with zero-copy using ActorWrapper
-3. Task zero-copy - TaskWrapper approach (spawns Ray tasks from actors for each call)
-4. Model zero-copy - ModelWrapper approach (cleaner API for zero-copy model loading)
+2. Actor zero-copy - Actors load model from object store with zero-copy using ModelWrapper
+3. Task zero-copy - ModelWrapper task mode (spawns Ray tasks from actors for each call)
 
 Usage:
     # Normal (baseline)
     python benchmark_actor_memory.py --mode normal --workers 4
 
-    # Actor zero-copy (ActorWrapper - RECOMMENDED for actors)
+    # Actor zero-copy (ModelWrapper actor mode - RECOMMENDED for actors)
     python benchmark_actor_memory.py --mode actor --workers 4
 
-    # Task zero-copy (TaskWrapper - spawns tasks, less efficient for actors)
+    # Task zero-copy (ModelWrapper task mode - spawns tasks, less efficient for actors)
     python benchmark_actor_memory.py --mode task --workers 4
-
-    # Model zero-copy (ModelWrapper - cleaner API)
-    python benchmark_actor_memory.py --mode model --workers 4
 """
 
 import argparse
@@ -31,7 +27,7 @@ import ray
 import torch
 from ray.data import ActorPoolStrategy
 
-from ray_zerocopy import ActorWrapper, ModelWrapper, TaskWrapper
+from ray_zerocopy import ModelWrapper
 from ray_zerocopy.benchmark import (
     create_large_model,
     estimate_model_size_mb,
@@ -86,13 +82,13 @@ class NormalActor:
 
 
 class ActorZeroCopyActor:
-    """Actor that loads model using zero-copy from object store with ActorWrapper."""
+    """Actor that loads model using zero-copy from object store with ModelWrapper."""
 
-    def __init__(self, actor_wrapper: ActorWrapper):
+    def __init__(self, model_wrapper: ModelWrapper):
         self.pid = os.getpid()
         with log_memory(f"Actor ZeroCopy {self.pid}"):
-            # Use ActorWrapper.load() to reconstruct the pipeline with zero-copy
-            self.pipeline = actor_wrapper.load()
+            # Use ModelWrapper.to_pipeline() to reconstruct the pipeline with zero-copy
+            self.pipeline = model_wrapper.to_pipeline(device="cpu")
 
     def __call__(self, batch: dict[str, np.ndarray]):
         with torch.no_grad():
@@ -118,20 +114,20 @@ class ActorZeroCopyActor:
 
 
 class TaskZeroCopyActor:
-    """Actor that uses TaskWrapper (spawns Ray tasks for inference on each call)."""
+    """Actor that uses ModelWrapper task mode (spawns Ray tasks for inference on each call)."""
 
-    def __init__(self, wrapped_pipeline):
+    def __init__(self, model_wrapper: ModelWrapper):
         self.pid = os.getpid()
         with log_memory(f"Task ZeroCopy {self.pid}"):
             # Store the wrapped pipeline (will spawn Ray tasks for inference)
-            self.wrapped_pipeline = wrapped_pipeline
+            self.model_wrapper = model_wrapper
 
     def __call__(self, batch):
         batch_size = int(batch["size"][0])
 
         with torch.no_grad():
             inputs = torch.randn(batch_size, 5000)
-            outputs = self.wrapped_pipeline(inputs)
+            outputs = self.model_wrapper(inputs)
 
         # Measure memory after inference
         gc.collect()
@@ -186,9 +182,9 @@ def main():
     parser = argparse.ArgumentParser(description="Memory benchmark for Ray Data actors")
     parser.add_argument(
         "--mode",
-        choices=["normal", "actor", "task", "model"],
+        choices=["normal", "actor", "task"],
         required=True,
-        help="Mode: normal (no zero-copy), actor (ActorWrapper), task (TaskWrapper), model (ModelWrapper)",
+        help="Mode: normal (no zero-copy), actor (ModelWrapper actor mode), task (ModelWrapper task mode)",
     )
     parser.add_argument("--workers", type=int, default=4, help="Number of workers")
     parser.add_argument(
@@ -239,7 +235,7 @@ def main():
             )
 
         elif args.mode == "actor":
-            # Actor zero-copy: Use ActorWrapper
+            # Actor zero-copy: Use ModelWrapper actor mode
             class Pipeline:
                 def __init__(self, model):
                     self.model = model
@@ -248,17 +244,17 @@ def main():
                     return self.model(x)
 
             pipeline = Pipeline(model)
-            actor_wrapper = ActorWrapper(pipeline)
+            model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
             results = ds.map_batches(
                 ActorZeroCopyActor,
-                fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+                fn_constructor_kwargs={"model_wrapper": model_wrapper},
                 batch_size=1,
                 compute=ActorPoolStrategy(size=args.workers),
             )
 
         elif args.mode == "task":
-            # Task zero-copy: Use TaskWrapper
+            # Task zero-copy: Use ModelWrapper task mode
             # This spawns Ray tasks for inference (inefficient for actors!)
             class Pipeline:
                 def __init__(self, model):
@@ -268,20 +264,10 @@ def main():
                     return self.model(x)
 
             pipeline = Pipeline(model)
-            wrapped = TaskWrapper(pipeline)
+            model_wrapper = ModelWrapper.for_tasks(pipeline)
 
             results = ds.map_batches(
                 TaskZeroCopyActor,
-                fn_constructor_kwargs={"wrapped_pipeline": wrapped},
-                batch_size=1,
-                compute=ActorPoolStrategy(size=args.workers),
-            )
-
-        elif args.mode == "model":
-            model_wrapper = ModelWrapper.from_model(model)
-
-            results = ds.map_batches(
-                ModelWrapperActor,
                 fn_constructor_kwargs={"model_wrapper": model_wrapper},
                 batch_size=1,
                 compute=ActorPoolStrategy(size=args.workers),

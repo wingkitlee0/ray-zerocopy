@@ -1,7 +1,7 @@
 """
 Comprehensive examples demonstrating the new unified wrapper API.
 
-This file shows all four wrapper classes side-by-side with realistic examples.
+This file shows ModelWrapper and JIT wrappers with realistic examples.
 """
 
 from typing import Generic, TypeVar
@@ -13,10 +13,9 @@ import torch.nn as nn
 from ray.data import ActorPoolStrategy
 
 from ray_zerocopy import (
-    ActorWrapper,
+    ModelWrapper,
     JITActorWrapper,
     JITTaskWrapper,
-    TaskWrapper,
 )
 
 T = TypeVar("T")
@@ -71,13 +70,13 @@ class Pipeline:
 
 
 # ============================================================================
-# Example 1: TaskWrapper - nn.Module with Ray Tasks
+# Example 1: ModelWrapper Task Mode - nn.Module with Ray Tasks
 # ============================================================================
 
 
 def example_task_wrapper():
     """
-    TaskWrapper executes nn.Module models in Ray tasks with zero-copy loading.
+    ModelWrapper task mode executes nn.Module models in Ray tasks with zero-copy loading.
 
     Use this when:
     - You want simple parallel inference via Ray tasks
@@ -85,12 +84,12 @@ def example_task_wrapper():
     - You don't need stateful actors
     """
     print("\n" + "=" * 70)
-    print("Example 1: TaskWrapper (nn.Module + Ray Tasks)")
+    print("Example 1: ModelWrapper Task Mode (nn.Module + Ray Tasks)")
     print("=" * 70)
 
     # Create and wrap pipeline
     pipeline = Pipeline()
-    wrapped = TaskWrapper(pipeline)
+    wrapped = ModelWrapper.for_tasks(pipeline)
 
     # Generate sample data
     sample_data = torch.randn(32, 784)
@@ -108,13 +107,13 @@ def example_task_wrapper():
 
 
 # ============================================================================
-# Example 2: ActorWrapper - nn.Module with Ray Actors
+# Example 2: ModelWrapper Actor Mode - nn.Module with Ray Actors
 # ============================================================================
 
 
 def example_actor_wrapper():
     """
-    ActorWrapper prepares nn.Module models for Ray actors (e.g., Ray Data).
+    ModelWrapper actor mode prepares nn.Module models for Ray actors (e.g., Ray Data).
 
     Use this when:
     - Using Ray Data with ActorPoolStrategy
@@ -122,18 +121,18 @@ def example_actor_wrapper():
     - Models are regular nn.Module (not TorchScript)
     """
     print("\n" + "=" * 70)
-    print("Example 2: ActorWrapper (nn.Module + Ray Actors)")
+    print("Example 2: ModelWrapper Actor Mode (nn.Module + Ray Actors)")
     print("=" * 70)
 
     # Create and wrap pipeline
     pipeline = Pipeline()
-    actor_wrapper = ActorWrapper(pipeline)
+    wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Define actor class
     class InferenceActor(Generic[T]):
-        def __init__(self, actor_wrapper: ActorWrapper[T]):
+        def __init__(self, model_wrapper: ModelWrapper[T]):
             # Load pipeline inside actor
-            self.pipeline = actor_wrapper.load()
+            self.pipeline = model_wrapper.to_pipeline()
 
         def __call__(self, batch):
             # Process batch through pipeline
@@ -152,7 +151,7 @@ def example_actor_wrapper():
     # Run inference with actor pool
     results = ds.map_batches(
         InferenceActor,
-        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+        fn_constructor_kwargs={"model_wrapper": wrapper},
         compute=ActorPoolStrategy(size=2),  # 2 actors in pool
         batch_size=10,
     )
@@ -330,8 +329,8 @@ def comparison_old_vs_new():
     print("rewritten = rewrite_pipeline(pipeline)")
 
     print("\n--- NEW API (recommended) ---")
-    print("from ray_zerocopy import TaskWrapper")
-    print("wrapped = TaskWrapper(pipeline)")
+    print("from ray_zerocopy import ModelWrapper")
+    print("wrapped = ModelWrapper.for_tasks(pipeline)")
 
     print("\n✓ New API is more explicit and consistent across use cases")
 
@@ -354,7 +353,7 @@ def example_metadata_preservation():
 
     # Create pipeline with docstring
     pipeline = Pipeline()
-    wrapped = TaskWrapper(pipeline)
+    wrapped = ModelWrapper.for_tasks(pipeline)
 
     print("\nOriginal Pipeline class docstring:")
     print(f"  '{pipeline.__class__.__doc__}'")
@@ -395,7 +394,7 @@ def main():
     print("All examples completed successfully!")
     print("=" * 70)
     print("\nFor more details, see:")
-    print("- API documentation: help(ray_zerocopy.TaskWrapper)")
+    print("- API documentation: help(ray_zerocopy.ModelWrapper)")
     print("- Metadata is preserved from wrapped classes!")
     print("=" * 70)
 

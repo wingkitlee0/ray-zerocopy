@@ -191,11 +191,11 @@ def rewrite_pipeline_original(pipeline: Any, method_names=("__call__",)) -> Any:
     pipeline into Ray tasks that load the model using zero-copy model loading.
 
     NOTE: This function is preserved as a reference implementation of the original
-    IBM code. Modern code should use TaskWrapper instead, which uses prepare_pipeline()
+    IBM code. Modern code should use ModelWrapper.for_tasks() instead, which uses prepare_pipeline()
     from ray_zerocopy.nn for better modularity.
 
     This is a low-level API. For most use cases, consider using
-    ray_zerocopy.TaskWrapper for a higher-level interface.
+    ray_zerocopy.ModelWrapper for a higher-level interface.
 
     Current limitatations:
     * Only models that are stored in fields of the top-level object will be

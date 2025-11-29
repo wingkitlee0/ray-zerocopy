@@ -16,7 +16,7 @@ ray-zerocopy enables efficient model sharing across Ray workers using zero-copy 
 
 ```python
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 
 # 1. Wrap your pipeline
 class MyPipeline:
@@ -28,12 +28,12 @@ class MyPipeline:
         return self.decoder(self.encoder(data))
 
 pipeline = MyPipeline()
-actor_wrapper = ActorWrapper(pipeline)
+actor_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # 2. Use in Ray Data actors
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.to_pipeline()
 
     def __call__(self, batch):
         with torch.no_grad():
@@ -42,7 +42,7 @@ class InferenceActor:
 # 3. Process with multiple actors sharing the model
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),  # 4 actors share the model
 )
 ```

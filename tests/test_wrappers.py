@@ -1,14 +1,14 @@
 """
 Tests for the new unified wrapper API.
 
-Tests TaskWrapper, ActorWrapper, JITTaskWrapper, and JITActorWrapper.
+Tests ModelWrapper.from_model(), for_tasks(), JITTaskWrapper, and JITActorWrapper.
 """
 
 import pytest
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import ActorWrapper, JITActorWrapper, JITTaskWrapper, TaskWrapper
+from ray_zerocopy import ModelWrapper, JITActorWrapper, JITTaskWrapper
 
 
 # Test models and pipelines
@@ -49,14 +49,14 @@ class MultiModelPipeline:
 
 
 # ============================================================================
-# TaskWrapper Tests
+# ModelWrapper Task Mode Tests
 # ============================================================================
 
 
-def test_task_wrapper_basic():
-    """Test basic TaskWrapper functionality."""
+def test_model_wrapper_task_basic():
+    """Test basic ModelWrapper task mode functionality."""
     pipeline = SimplePipeline()
-    wrapped = TaskWrapper(pipeline)
+    wrapped = ModelWrapper.from_model(pipeline, mode="task")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -66,10 +66,23 @@ def test_task_wrapper_basic():
     assert isinstance(result, torch.Tensor), "Result should be a tensor"
 
 
-def test_task_wrapper_custom_method():
-    """Test TaskWrapper with custom method names."""
+def test_model_wrapper_for_tasks_shortcut():
+    """Test ModelWrapper.for_tasks() shortcut."""
     pipeline = SimplePipeline()
-    wrapped = TaskWrapper(pipeline, method_names=("predict",))
+    wrapped = ModelWrapper.for_tasks(pipeline)
+
+    # Test inference
+    test_input = torch.randn(3, 10)
+    result = wrapped(test_input)
+
+    assert result.shape == (3, 5), "Output shape should be (3, 5)"
+    assert isinstance(result, torch.Tensor), "Result should be a tensor"
+
+
+def test_model_wrapper_task_custom_method():
+    """Test ModelWrapper task mode with custom method names."""
+    pipeline = SimplePipeline()
+    wrapped = ModelWrapper.from_model(pipeline, mode="task", method_names=("predict",))
 
     # Test custom method
     test_input = torch.randn(3, 10)
@@ -78,10 +91,10 @@ def test_task_wrapper_custom_method():
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
 
-def test_task_wrapper_multi_model():
-    """Test TaskWrapper with multiple models."""
+def test_model_wrapper_task_multi_model():
+    """Test ModelWrapper task mode with multiple models."""
     pipeline = MultiModelPipeline()
-    wrapped = TaskWrapper(pipeline)
+    wrapped = ModelWrapper.for_tasks(pipeline)
 
     test_input = torch.randn(3, 10)
     result = wrapped(test_input)
@@ -90,17 +103,17 @@ def test_task_wrapper_multi_model():
 
 
 # ============================================================================
-# ActorWrapper Tests
+# ModelWrapper Actor Mode Tests
 # ============================================================================
 
 
-def test_actor_wrapper_basic():
-    """Test basic ActorWrapper functionality."""
+def test_model_wrapper_actor_basic():
+    """Test basic ModelWrapper actor mode functionality."""
     pipeline = SimplePipeline()
-    actor_wrapper = ActorWrapper(pipeline)
+    wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Load in current process (simulating actor)
-    loaded_pipeline = actor_wrapper.load(device="cpu")
+    loaded_pipeline = wrapper.to_pipeline(device="cpu")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -110,13 +123,13 @@ def test_actor_wrapper_basic():
     assert isinstance(result, torch.Tensor), "Result should be a tensor"
 
 
-def test_actor_wrapper_multi_model():
-    """Test ActorWrapper with multiple models."""
+def test_model_wrapper_actor_multi_model():
+    """Test ModelWrapper actor mode with multiple models."""
     pipeline = MultiModelPipeline()
-    actor_wrapper = ActorWrapper(pipeline)
+    wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Load in current process
-    loaded_pipeline = actor_wrapper.load(device="cpu")
+    loaded_pipeline = wrapper.to_pipeline(device="cpu")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -125,24 +138,13 @@ def test_actor_wrapper_multi_model():
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
 
-def test_actor_wrapper_constructor_kwargs():
-    """Test ActorWrapper.constructor_kwargs property."""
+def test_model_wrapper_actor_device_override():
+    """Test ModelWrapper actor mode with device specification in to_pipeline()."""
     pipeline = SimplePipeline()
-    actor_wrapper = ActorWrapper(pipeline)
-
-    kwargs = actor_wrapper.constructor_kwargs
-
-    assert "pipeline_skeleton" in kwargs
-    assert "model_refs" in kwargs
-
-
-def test_actor_wrapper_device_override():
-    """Test ActorWrapper with device specification in load()."""
-    pipeline = SimplePipeline()
-    actor_wrapper = ActorWrapper(pipeline)
+    wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Load with device specification
-    loaded_pipeline = actor_wrapper.load(device="cpu")
+    loaded_pipeline = wrapper.to_pipeline(device="cpu")
 
     test_input = torch.randn(3, 10)
     result = loaded_pipeline(test_input)
@@ -386,18 +388,14 @@ def test_wrapper_api_consistency():
     jit_pipeline = JITPipeline()
 
     # All wrappers should accept similar constructor args
-    task_wrapper = TaskWrapper(nn_pipeline)
-    actor_wrapper = ActorWrapper(nn_pipeline)
+    task_wrapper = ModelWrapper.for_tasks(nn_pipeline)
+    actor_wrapper = ModelWrapper.from_model(nn_pipeline, mode="actor")
     jit_task_wrapper = JITTaskWrapper(jit_pipeline)
     jit_actor_wrapper = JITActorWrapper(jit_pipeline)
 
-    # Actor wrappers should have load() method
-    assert hasattr(actor_wrapper, "load")
+    # Actor wrappers should have to_pipeline() or load() method
+    assert hasattr(actor_wrapper, "to_pipeline")
     assert hasattr(jit_actor_wrapper, "load")
-
-    # Actor wrappers should have constructor_kwargs property
-    assert hasattr(actor_wrapper, "constructor_kwargs")
-    assert hasattr(jit_actor_wrapper, "constructor_kwargs")
 
 
 def test_wrapper_determinism():
@@ -410,14 +408,14 @@ def test_wrapper_determinism():
     with torch.no_grad():
         original_output = pipeline(test_input)
 
-    # Test TaskWrapper
-    wrapped = TaskWrapper(pipeline)
+    # Test ModelWrapper task mode
+    wrapped = ModelWrapper.for_tasks(pipeline)
     wrapped_output = wrapped(test_input)
     assert torch.allclose(original_output, wrapped_output, rtol=1e-4)
 
-    # Test ActorWrapper
-    actor_wrapper = ActorWrapper(pipeline)
-    loaded = actor_wrapper.load(device="cpu")
+    # Test ModelWrapper actor mode
+    actor_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+    loaded = actor_wrapper.to_pipeline(device="cpu")
     with torch.no_grad():
         actor_output = loaded(test_input)
     assert torch.allclose(original_output, actor_output, rtol=1e-4)
