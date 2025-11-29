@@ -112,7 +112,6 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
         >>> class InferenceActor:
         ...     def __init__(self, model_wrapper):
         ...         self.model = model_wrapper.load()
-        ...         self.model = self.model.to("cuda:0")  # Move to GPU if needed
         ...     def __call__(self, batch):
         ...         return self.model(batch["data"])
         >>>
@@ -308,8 +307,6 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             ...     def __init__(self, model_wrapper):
             ...         # Load model (on CPU)
             ...         self.model = model_wrapper.load()
-            ...         # Move to GPU if needed
-            ...         self.model = self.model.to("cuda:0")
             ...
             ...     def __call__(self, batch):
             ...         return self.model(batch["data"])

@@ -88,8 +88,6 @@ def load_jit_model_in_actor(
 
     Args:
         model_ref: ObjectRef from prepare_jit_model_for_actors()
-        device: Device to move the model to (e.g., "cuda:0", "cpu").
-               If None, model stays on CPU
 
     Returns:
         Reconstructed TorchScript model ready for inference
@@ -213,7 +211,6 @@ def load_pipeline_for_actors(
     Args:
         pipeline_skeleton: Pipeline skeleton from prepare_pipeline_for_actors()
         model_refs: Model references dict from prepare_pipeline_for_actors()
-        device: Device to load models on (e.g., "cuda:0")
 
     Returns:
         Pipeline object with TorchScript models loaded and ready for inference

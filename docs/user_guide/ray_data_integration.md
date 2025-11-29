@@ -35,7 +35,6 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 class InferenceActor:
     def __init__(self, model_wrapper):
         self.pipeline = model_wrapper.load()
-        self.pipeline = self.pipeline.to("cuda:0")
 
     def __call__(self, batch):
         return self.pipeline(batch["data"])
@@ -45,7 +44,6 @@ results = ds.map_batches(
     InferenceActor,
     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),
-    num_gpus=1
 )
 
 # 5. Write results
@@ -64,7 +62,6 @@ results = ds.map_batches(
     InferenceActor,
     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),
-    num_gpus=1
 )
 ```
 
@@ -219,7 +216,6 @@ results = ds.map_batches(
     InferenceActor,
     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),
-    num_gpus=1,
     prefetch_batches=2  # Prefetch 2 batches
 )
 ```
@@ -264,7 +260,7 @@ class InferenceActor:
     def __call__(self, batch):
         # Preprocess images
         images = [self.transform(img) for img in batch["image"]]
-        images = torch.stack(images).to("cuda:0")
+        images = torch.stack(images)
 
         # Inference
         logits = self.pipeline(images)
@@ -286,7 +282,7 @@ results = ds.map_batches(
     InferenceActor,
     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
-    compute=ActorPoolStrategy(size=4)
+    compute=ActorPoolStrategy(size=4),
 )
 
 # Write results

@@ -316,29 +316,6 @@ class StatefulPipeline:
 
 Each actor gets its own copy of `preprocessor`, `config`, and `stats`, but shares the model weights.
 
-## GPU Inference
-
-Works the same as basic tutorial:
-
-```python
-model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-
-# Update actor to move to GPU after loading
-class PipelineInferenceActor:
-    def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load()
-
-results = ds.map_batches(
-    PipelineInferenceActor,
-    fn_constructor_kwargs={"model_wrapper": model_wrapper},
-    batch_size=25,
-    compute=ActorPoolStrategy(size=1),
-    num_gpus=1
-)
-```
-
-Both encoder and decoder are loaded to GPU.
-
 ## Real-World Example: Text Processing
 
 Here's a realistic text processing pipeline:

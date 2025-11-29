@@ -233,11 +233,6 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
         Call this method from within an actor's __init__ method to reconstruct
         the pipeline with TorchScript models loaded from the object store using zero-copy.
 
-        Args:
-            device: Device to move models to after loading (e.g., "cuda:0", "cpu").
-                   If None, no device transfer is performed (models remain on the
-                   device they were reconstructed on, typically CPU from object store).
-
         Returns:
             Pipeline object with TorchScript models loaded and ready for inference
 

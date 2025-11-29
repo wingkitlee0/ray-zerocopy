@@ -97,8 +97,6 @@ def load_pipeline_for_actors(
     Args:
         pipeline_skeleton: Pipeline skeleton from prepare_pipeline_for_actors()
         model_refs: Model references dict from prepare_pipeline_for_actors()
-        device: Device to load models on (e.g., "cuda:0", "cpu").
-            If None, models remain on CPU
         use_fast_load: Whether to use faster but slightly riskier loading method.
             If True, uses replace_tensors_direct. Default False.
 

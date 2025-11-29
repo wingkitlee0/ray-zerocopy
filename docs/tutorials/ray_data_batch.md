@@ -41,7 +41,6 @@ model_wrapper = ModelWrapper.from_model(model, mode="actor")
 class InferenceActor:
     def __init__(self, model_wrapper):
         self.model = model_wrapper.load()
-        self.model = self.model.to("cuda:0")
 
         # Preprocessing pipeline
         self.transform = transforms.Compose([
@@ -62,8 +61,8 @@ class InferenceActor:
             img = self.transform(img)
             images.append(img)
 
-        # Stack and move to GPU
-        images = torch.stack(images).to("cuda:0")
+        # Stack images
+        images = torch.stack(images)
 
         # Inference
         with torch.no_grad():
@@ -105,7 +104,6 @@ Preprocessing is often done inside the actor for efficiency:
 class InferenceActor:
     def __init__(self, model_wrapper):
         self.model = model_wrapper.load()
-        self.model = self.model.to("cuda:0")
         self.preprocessor = MyPreprocessor()  # Initialize once
 
     def __call__(self, batch):
@@ -120,7 +118,6 @@ class InferenceActor:
 
 **Benefits:**
 - Preprocessing happens on the actor's resources
-- Can use actor's GPU for preprocessing
 - Reduces data transfer
 
 ### Pattern 2: Separate Preprocessing Step
@@ -131,19 +128,17 @@ For heavy preprocessing, use a separate step:
 # Step 1: Preprocess (CPU-intensive)
 ds = ds.map_batches(preprocess_fn, batch_size=100)
 
-# Step 2: Inference (GPU-intensive)
+# Step 2: Inference
 ds = ds.map_batches(
     InferenceActor,
     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),
-    num_gpus=1
 )
 ```
 
 **Benefits:**
 - Separate resource allocation
-- CPU preprocessing doesn't block GPU inference
 - Better resource utilization
 
 ### Pattern 3: Postprocessing
@@ -154,7 +149,6 @@ Add postprocessing for clean outputs:
 class InferenceActor:
     def __init__(self, model_wrapper):
         self.model = model_wrapper.load()
-        self.model = self.model.to("cuda:0")
 
     def __call__(self, batch):
         # Inference
@@ -179,7 +173,6 @@ Handle errors gracefully:
 class InferenceActor:
     def __init__(self, model_wrapper):
         self.model = model_wrapper.load()
-        self.model = self.model.to("cuda:0")
         self.error_count = 0
 
     def __call__(self, batch):
@@ -240,39 +233,38 @@ ds = ray.data.from_pandas(df)
 
 ### Batch Size
 
-Tune batch size for your GPU:
+Tune batch size for optimal performance:
 
 ```python
-# Too small: Underutilized GPU
+# Too small: Overhead dominates
 batch_size=1  # ❌
 
 # Too large: OOM errors
 batch_size=1000  # ❌
 
-# Just right: Saturate GPU without OOM
+# Just right: Balance throughput and memory
 batch_size=32  # ✅ Start here, then tune
 ```
 
 **How to tune:**
 1. Start with 32
-2. Monitor GPU utilization
-3. Increase until utilization >80% or OOM
+2. Monitor throughput and memory usage
+3. Increase until you see diminishing returns or OOM
 4. Back off 20%
 
 ### Actor Pool Size
 
-Match number of GPUs:
+Match available resources:
 
 ```python
-# 4 GPUs available
+# 4 actors for parallel processing
 compute=ActorPoolStrategy(size=4)
-num_gpus=1  # Each actor gets 1 GPU
 ```
 
-For CPU inference:
+For higher throughput:
 
 ```python
-# Use more actors (no GPU constraint)
+# Use more actors for better parallelism
 compute=ActorPoolStrategy(size=16)
 ```
 
@@ -286,7 +278,6 @@ results = ds.map_batches(
     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),
-    num_gpus=1,
     prefetch_batches=2  # Prefetch 2 batches per actor
 )
 ```
@@ -444,7 +435,6 @@ def main():
         fn_constructor_kwargs={"model_wrapper": model_wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=4),
-        num_gpus=1,
         prefetch_batches=2
     )
 
@@ -464,10 +454,9 @@ if __name__ == "__main__":
 2. **Use try/except** - Handle errors gracefully
 3. **Log progress** - Track batches and errors
 4. **Tune batch size** - Balance throughput and memory
-5. **Match actors to GPUs** - One actor per GPU
-6. **Profile first** - Measure before optimizing
-7. **Partition output** - Don't create huge files
-8. **Monitor memory** - Watch for OOM errors
+5. **Profile first** - Measure before optimizing
+6. **Partition output** - Don't create huge files
+7. **Monitor memory** - Watch for OOM errors
 
 ## Next Steps
 
@@ -479,13 +468,13 @@ if __name__ == "__main__":
 
 ### Out of Memory (OOM)
 
-**Problem:** GPU runs out of memory
+**Problem:** System runs out of memory
 
 **Solutions:**
 - Reduce `batch_size`
 - Use smaller model
-- Clear cache: `torch.cuda.empty_cache()`
-- Use gradient checkpointing
+- Reduce number of actors
+- Monitor memory usage
 
 ### Slow Inference
 
