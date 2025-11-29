@@ -109,7 +109,6 @@ class TaskWrapper(WrapperMixin[T], Generic[T]):
             pipeline: Object containing torch.nn.Module models as attributes
             method_names: Model methods to expose via remote tasks
         """
-        # Use the new prepare_pipeline and load_pipeline_for_tasks API
         skeleton, model_info = rzc_nn.prepare_pipeline(
             pipeline, method_names=method_names, filter_private=False
         )

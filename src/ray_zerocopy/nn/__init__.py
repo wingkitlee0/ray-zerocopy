@@ -11,8 +11,8 @@ from .actors import (
     load_pipeline_for_actors,
     prepare_pipeline_for_actors,
 )
-from .rewrite import load_pipeline_for_tasks, prepare_pipeline, rewrite_pipeline
-from .utils import ZeroCopyModel
+from .rewrite import prepare_pipeline
+from .tasks import load_pipeline_for_tasks, rewrite_pipeline
 
 __all__ = [
     # Actor-based functions
@@ -23,6 +23,4 @@ __all__ = [
     "rewrite_pipeline",  # Convenience function
     # Generic pipeline preparation
     "prepare_pipeline",
-    # Utility classes
-    "ZeroCopyModel",
 ]
