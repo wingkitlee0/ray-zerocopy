@@ -80,6 +80,9 @@ class TaskWrapper(WrapperMixin[T], Generic[T]):
 
     Use this when you want to run inference via Ray tasks (not actors).
     For Ray Data with ActorPoolStrategy, use ActorWrapper instead.
+    
+    **Note**: This class is now a thin wrapper around ModelWrapper for backward compatibility.
+    Consider using `ModelWrapper.for_tasks()` or `ModelWrapper.from_model(..., mode="task")` directly.
 
     Args:
         pipeline: Object containing torch.nn.Module models as attributes
@@ -100,6 +103,8 @@ class TaskWrapper(WrapperMixin[T], Generic[T]):
         >>> wrapped = TaskWrapper(pipeline)
         >>> result = wrapped.process(data)  # Each model call spawns a Ray task
     """
+    
+    _wrapper: "ModelWrapper[T]"
 
     def __init__(self, pipeline: T, method_names: tuple = ("__call__",)):
         """
@@ -109,32 +114,35 @@ class TaskWrapper(WrapperMixin[T], Generic[T]):
             pipeline: Object containing torch.nn.Module models as attributes
             method_names: Model methods to expose via remote tasks
         """
-        skeleton, model_info = rzc_nn.prepare_pipeline(
-            pipeline, method_names=method_names, filter_private=False
+        from ray_zerocopy.model_wrappers import ModelWrapper
+        
+        # Delegate to ModelWrapper with task mode
+        self._wrapper = ModelWrapper.from_model(
+            pipeline,
+            mode="task",
+            method_names=method_names,
         )
-
-        self._rewritten = rzc_nn.load_pipeline_for_tasks(skeleton, model_info)
-
-        self._configure_wrapper(pipeline)
-        self._preserve_call_signature(pipeline)
 
     def __getstate__(self):
         """Return state for pickling."""
         return {
-            "_rewritten": self._rewritten,
+            "_wrapper": self._wrapper,
         }
 
     def __setstate__(self, state):
         """Restore state from pickling."""
-        self._rewritten = state["_rewritten"]
+        self._wrapper = state["_wrapper"]
 
     def __call__(self, *args, **kwargs):
-        """Forward calls to the rewritten pipeline."""
-        return self._rewritten(*args, **kwargs)
+        """Forward calls to the underlying wrapper."""
+        return self._wrapper(*args, **kwargs)
 
     def __getattr__(self, name: str):
-        """Forward attribute access to the rewritten pipeline."""
-        return getattr(self._rewritten, name)
+        """Forward attribute access to the underlying wrapper."""
+        # Avoid infinite recursion for private attributes
+        if name.startswith("_"):
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        return getattr(self._wrapper, name)
 
 
 class JITTaskWrapper(WrapperMixin[T], Generic[T]):
@@ -216,6 +224,9 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
 
     Use this when you want to run inference in Ray actors (e.g., with Ray Data).
     For simple Ray tasks, use TaskWrapper instead.
+    
+    **Note**: This class is now a thin wrapper around ModelWrapper for backward compatibility.
+    Consider using `ModelWrapper.from_model(..., mode="actor")` directly.
 
     Args:
         pipeline: Object containing torch.nn.Module models as attributes
@@ -254,9 +265,8 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
         ...     compute=ActorPoolStrategy(size=4)
         ... )
     """
-
-    _skeleton: T
-    _model_refs: dict[str, ray.ObjectRef]
+    
+    _wrapper: "ModelWrapper[T]"
 
     def __init__(
         self,
@@ -270,11 +280,24 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
             pipeline: Object containing torch.nn.Module models
             model_attr_names: List of model attribute names (auto-detected if None)
         """
-        self._skeleton, self._model_refs = rzc_nn.prepare_pipeline_for_actors(
+        from ray_zerocopy.model_wrappers import ModelWrapper
+        
+        # Delegate to ModelWrapper with actor mode
+        self._wrapper = ModelWrapper.from_model(
             pipeline,
-            model_attr_names,
+            mode="actor",
+            model_attr_names=model_attr_names,
         )
-        self._configure_wrapper(pipeline)
+
+    def __getstate__(self):
+        """Return state for pickling."""
+        return {
+            "_wrapper": self._wrapper,
+        }
+
+    def __setstate__(self, state):
+        """Restore state from pickling."""
+        self._wrapper = state["_wrapper"]
 
     def load(self, device: Optional[str] = None, _use_fast_load: bool = False) -> T:
         """
@@ -285,8 +308,8 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
 
         Args:
             device: Device to move models to after loading (e.g., "cuda:0", "cpu").
-                If None, no device transfer is performed (models remain on the
-                device they were reconstructed on, typically CPU from object store).
+                   If None, no device transfer is performed (models remain on the
+                   device they were reconstructed on, typically CPU from object store).
             _use_fast_load: Use faster but slightly riskier loading method.
 
         Returns:
@@ -301,19 +324,19 @@ class ActorWrapper(WrapperMixin[T], Generic[T]):
             ...     def __call__(self, batch):
             ...         return self.pipeline(batch["data"])
         """
-        return rzc_nn.load_pipeline_for_actors(
-            self._skeleton,
-            self._model_refs,
-            device=device,
-            use_fast_load=_use_fast_load,
-        )
+        return self._wrapper.to_pipeline(device=device, _use_fast_load=_use_fast_load)
 
     @property
     def constructor_kwargs(self) -> dict:
-        """Get kwargs dict for Ray Data fn_constructor_kwargs."""
+        """Get kwargs dict for Ray Data fn_constructor_kwargs.
+        
+        Returns both old and new formats for backward compatibility.
+        """
         return {
-            "pipeline_skeleton": self._skeleton,
-            "model_refs": self._model_refs,
+            "actor_wrapper": self,
+            # Also include old format for backward compatibility
+            "pipeline_skeleton": self._wrapper._skeleton,
+            "model_refs": self._wrapper._model_refs,
         }
 
 
@@ -412,8 +435,8 @@ class JITActorWrapper(WrapperMixin[T], Generic[T]):
 
         Args:
             device: Device to move models to after loading (e.g., "cuda:0", "cpu").
-                If None, no device transfer is performed (models remain on the
-                device they were reconstructed on, typically CPU from object store).
+                   If None, no device transfer is performed (models remain on the
+                   device they were reconstructed on, typically CPU from object store).
 
         Returns:
             Pipeline object with TorchScript models loaded and ready for inference
