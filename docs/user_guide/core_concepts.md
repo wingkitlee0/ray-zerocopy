@@ -5,161 +5,39 @@
 Zero-copy refers to sharing data between processes without duplicating it in memory. In ray-zerocopy, this means:
 
 1. Model weights are stored **once** in Ray's object store
-2. Multiple workers **reference** the same memory location
-3. No duplication = massive memory savings
+2. Multiple workers **reference** the same memory location via object references
+3. No duplication = significant memory savings
 
-## Pipelines
+## How It Works
 
-A **Pipeline** is any Python class that contains `torch.nn.Module` attributes. The library automatically identifies and shares all models in your pipeline.
+When you wrap a model with `ModelWrapper`, the library:
 
-### Example: Simple Pipeline
+1. Extracts model weights and stores them in Ray's object store using `ray.put()`
+2. Creates a skeleton (pipeline structure without weights) that can be serialized
+3. In actors, reconstructs the model by loading weights from object references using `ray.get()`
 
-```python
-class MyPipeline:
-    def __init__(self):
-        self.feature_extractor = FeatureExtractorModel()  # nn.Module
-        self.classifier = ClassifierModel()  # nn.Module
-        self.config = {"threshold": 0.5}  # Non-model attributes preserved
-
-    def __call__(self, data):
-        features = self.feature_extractor(data)
-        return self.classifier(features)
-```
-
-**What gets shared:**
-- ✅ `self.feature_extractor` (nn.Module)
-- ✅ `self.classifier` (nn.Module)
-
-**What gets copied:**
-- ✅ `self.config` (regular Python object)
-
-### Example: Complex Pipeline
-
-```python
-class ComplexPipeline:
-    def __init__(self):
-        # Multiple models
-        self.encoder = EncoderModel()
-        self.decoder = DecoderModel()
-        self.discriminator = DiscriminatorModel()
-
-        # Nested models
-        self.embeddings = {
-            "text": TextEmbedding(),
-            "image": ImageEmbedding()
-        }
-
-        # Non-model state
-        self.preprocessing_config = {...}
-        self.stats = {"calls": 0}
-```
-
-All `nn.Module` instances are automatically identified and shared via zero-copy, regardless of nesting.
-
-## Wrapper Classes
-
-### ModelWrapper
-
-Unified wrapper for both task and actor execution modes. Supports zero-copy model sharing for nn.Module models.
-
-**Task Mode** - For ad-hoc inference with Ray tasks:
-
-```python
-from ray_zerocopy import ModelWrapper
-
-pipeline = MyPipeline()
-wrapped = ModelWrapper.for_tasks(pipeline)
-
-# Each call spawns a Ray task
-result = wrapped(data)
-```
-
-**Actor Mode** - For Ray Data and long-running actors:
-
-```python
-from ray_zerocopy import ModelWrapper
-
-pipeline = MyPipeline()
-model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-
-class InferenceActor:
-    def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load()  # Load once (on CPU)
-
-    def __call__(self, batch):
-        return self.pipeline(batch)  # Reuse loaded model
-```
-
-**When to use:**
-- **Task mode**: Ad-hoc inference calls, don't need persistent state
-- **Actor mode**: Ray Data `map_batches`, long-running inference service, batch processing workloads
+Ray's object store uses shared memory (on the same node) or efficient serialization (across nodes), enabling multiple actors to reference the same model weights without copying them.
 
 ## Memory Model
 
-### Without Zero-Copy
+**Without zero-copy:**
+- Each actor loads its own copy: 4 actors × 5GB = 20GB
 
-Each actor/task loads its own copy:
+**With zero-copy:**
+- Model stored once in object store: 5GB
+- All actors reference the same memory: ~5GB total
 
-```
-┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
-│ Actor 1 │  │ Actor 2 │  │ Actor 3 │  │ Actor 4 │
-│  5GB    │  │  5GB    │  │  5GB    │  │  5GB    │
-└─────────┘  └─────────┘  └─────────┘  └─────────┘
-                Total: 20GB
-```
+## Pipelines
 
-### With Zero-Copy
+A **Pipeline** is any Python class that contains `torch.nn.Module` attributes. ModelWrapper automatically identifies and shares all `nn.Module` instances in your pipeline via zero-copy.
 
-All actors reference shared memory:
-
-```
-┌───────────────────────────────────────┐
-│        Ray Object Store (5GB)         │
-└───────────────────────────────────────┘
-     ↑         ↑         ↑         ↑
-┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
-│ Actor 1 │  │ Actor 2 │  │ Actor 3 │  │ Actor 4 │
-│  ref    │  │  ref    │  │  ref    │  │  ref    │
-└─────────┘  └─────────┘  └─────────┘  └─────────┘
-                Total: ~5GB
-```
+Non-model attributes (like configuration dictionaries) are copied to each actor, but model weights are shared.
 
 ## Device Placement
 
 Models are loaded on CPU by default. You can move them to any device after loading using standard PyTorch methods.
 
-## TorchScript Support
+## Next Steps
 
-ray-zerocopy also supports TorchScript (compiled) models:
-
-```python
-from ray_zerocopy import JITActorWrapper
-
-# Compile your model
-jit_pipeline = torch.jit.trace(pipeline, example_input)
-
-# Use with actors
-actor_wrapper = JITActorWrapper(jit_pipeline)
-```
-
-See [TorchScript Guide](torchscript.md) for details.
-
-## Performance Considerations
-
-### When Zero-Copy Helps Most
-
-- **Large models** (multi-GB weights)
-- **Multiple workers** (more duplication avoided)
-- **Limited memory** (can't fit N copies)
-
-### When Zero-Copy Matters Less
-
-- **Small models** (<100MB)
-- **Single worker**
-- **Abundant memory**
-
-### Best Practices
-
-1. **Use actors for batch processing** - `ModelWrapper.from_model(..., mode="actor")` with Ray Data
-2. **Load once, infer many** - Actors amortize loading overhead
-3. **Profile your workload** - Measure memory usage with/without zero-copy
+- See the [ModelWrapper Guide](../model_wrapper_guide.md) for usage examples
+- Check the [API Reference](../api_reference/index.md) for detailed documentation
