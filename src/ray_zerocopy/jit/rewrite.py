@@ -39,12 +39,13 @@ def extract_tensors(
     1. Extracts all parameters/buffers as NumPy arrays (for zero-copy via Ray)
     2. Serializes the model structure
 
-    :param m: A TorchScript model (torch.jit.ScriptModule)
-    :type m: torch.jit.ScriptModule
+    Args:
+        m: A TorchScript model (torch.jit.ScriptModule)
 
-    :returns: A tuple with two elements:
-              * Serialized model structure (bytes)
-              * Dictionary mapping parameter names to NumPy arrays
+    Returns:
+        A tuple with two elements:
+        * Serialized model structure (bytes)
+        * Dictionary mapping parameter names to NumPy arrays
     """
     if not isinstance(m, torch.jit.ScriptModule):
         raise TypeError(
@@ -89,10 +90,12 @@ def replace_tensors(model_bytes: bytes, tensors: OrderedDict) -> torch.jit.Scrip
     from its serialized form and restores the actual weights using zero-copy
     operations when possible.
 
-    :param model_bytes: Serialized TorchScript model structure (from torch.jit.save)
-    :param tensors: Dictionary mapping parameter names to NumPy arrays
+    Args:
+        model_bytes: Serialized TorchScript model structure (from torch.jit.save)
+        tensors: Dictionary mapping parameter names to NumPy arrays
 
-    :returns: A fully functional TorchScript model ready for inference
+    Returns:
+        A fully functional TorchScript model ready for inference
     """
     # Deserialize the model structure
     buffer = io.BytesIO(model_bytes)
@@ -128,9 +131,11 @@ def extract_tensors_minimal(
     that have shape-dependent logic in the compiled graph. Use with caution
     and test thoroughly.
 
-    :param m: A TorchScript model (torch.jit.ScriptModule)
+    Args:
+        m: A TorchScript model (torch.jit.ScriptModule)
 
-    :returns: A tuple of (serialized model bytes, tensors as numpy arrays)
+    Returns:
+        A tuple of (serialized model bytes, tensors as numpy arrays)
     """
     if not isinstance(m, torch.jit.ScriptModule):
         raise TypeError(

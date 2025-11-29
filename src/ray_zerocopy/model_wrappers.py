@@ -212,7 +212,7 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
 
         Args:
             device: Device to move models to (e.g., "cuda:0", "cpu").
-                   If None, models remain on CPU. Defaults to None.
+                If None, models remain on CPU. Defaults to None.
             _use_fast_load: Use faster but slightly riskier loading method. Defaults to False.
 
         Returns:

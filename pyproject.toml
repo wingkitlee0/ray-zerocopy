@@ -1,7 +1,7 @@
 [project]
 name = "ray-zerocopy"
 version = "0.1.0"
-description = "Add your description here"
+description = "Zero-copy model sharing for PyTorch inference in Ray"
 readme = "README.md"
 authors = [
     { name = "Kit Lee", email = "wklee4993@gmail.com" }
@@ -14,9 +14,20 @@ dependencies = [
     "psutil>=5.9.0",
 ]
 
+[project.urls]
+Documentation = "https://ray-zerocopy.readthedocs.io"
+Source = "https://github.com/yourusername/ray-zerocopy"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme",
+    "myst-parser",
+    "sphinx-autodoc-typehints",
+    "linkify-it-py",
 ]
 
 [project.scripts]

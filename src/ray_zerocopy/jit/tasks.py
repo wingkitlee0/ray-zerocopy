@@ -35,16 +35,18 @@ def call_model(
     Ray task that uses zero-copy model loading to reconstitute a TorchScript
     model from Plasma, then calls a method on the model.
 
-    :param model_ref: Object reference to a tuple of (model_bytes, weights)
-                      as returned by extract_tensors()
-    :param args: Ordered arguments to pass to the model's method
-    :param kwargs: Keyword arguments to pass to the model's method,
-                   or None to pass no keyword arguments
-    :param method_name: Name of the method to call on the object.
-                        For TorchScript models, this is typically "__call__"
-                        or "forward"
+    Args:
+        model_ref: Object reference to a tuple of (model_bytes, weights)
+            as returned by extract_tensors()
+        args: Ordered arguments to pass to the model's method
+        kwargs: Keyword arguments to pass to the model's method,
+            or None to pass no keyword arguments
+        method_name: Name of the method to call on the object.
+            For TorchScript models, this is typically "__call__"
+            or "forward"
 
-    :returns: Return value from calling the specified method
+    Returns:
+        Return value from calling the specified method
     """
     if kwargs is None:
         kwargs = {}
@@ -118,21 +120,23 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__", "forward")) -> Any
     that load the model using zero-copy model loading.
 
     This is a low-level API. For most use cases, consider using
-    :class:`ray_zerocopy.JITTaskWrapper` for a higher-level interface.
+    ray_zerocopy.JITTaskWrapper for a higher-level interface.
 
     Limitations:
-    * Only models that are subclasses of ``torch.jit.ScriptModule`` will be rewritten.
+    * Only models that are subclasses of torch.jit.ScriptModule will be rewritten.
     * If there are multiple pointers to the same model, they will be
       treated as separate models and loaded separately onto Plasma.
-    * ``pipeline`` must be an object that will still work properly after
-      being shallow-copied with :func:`copy.copy()`
+    * pipeline must be an object that will still work properly after
+      being shallow-copied with copy.copy()
 
-    :param pipeline: Python object that wraps a model serving pipeline
-    :param method_names: Names of model methods to forward to remote classes.
-                         Default is ("__call__", "forward") for TorchScript
+    Args:
+        pipeline: Python object that wraps a model serving pipeline
+        method_names: Names of model methods to forward to remote classes.
+            Default is ("__call__", "forward") for TorchScript
 
-    :returns: A shallow copy of pipeline in which all TorchScript models
-              are replaced with wrapper objects that forward calls to Ray tasks
+    Returns:
+        A shallow copy of pipeline in which all TorchScript models
+        are replaced with wrapper objects that forward calls to Ray tasks
     """
     # Find all TorchScript models hanging directly off the pipeline object
     jit_model_attr_names = [
