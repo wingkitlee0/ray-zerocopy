@@ -14,6 +14,16 @@ their own USS, which is reported in the worker startup messages above.
 """.strip()
 
 
+def get_memory_mb(pid=None):
+    if pid is None:
+        pid = os.getpid()
+    try:
+        process = psutil.Process(pid)
+        return process.memory_info().rss / 1024 / 1024
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return 0
+
+
 def monitor_memory(stop_event, stats, interval=1.0, show_parent=False):
     """Monitor memory usage of Ray workers and track stats.
 

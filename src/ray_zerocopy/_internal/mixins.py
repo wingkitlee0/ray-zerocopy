@@ -11,8 +11,6 @@ class WrapperMixin(Generic[T]):
     Handles metadata preservation (__doc__, __annotations__) and reference to original object.
     """
 
-    __wrapped__: T
-
     def _configure_wrapper(self, pipeline: T):
         """
         Common initialization for wrappers.
@@ -20,9 +18,6 @@ class WrapperMixin(Generic[T]):
         - Copies class docstring
         - Preserves annotations
         """
-        # Store reference to original (Python convention for wrappers)
-        self.__wrapped__ = pipeline
-
         # Copy class-level metadata from the wrapped pipeline
         if pipeline.__class__.__doc__:
             # Append original docstring to wrapper's docstring
