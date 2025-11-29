@@ -96,7 +96,7 @@ def test_model_wrapper_actor_mode_basic():
         assert "actor mode wrapper" in str(e).lower()
 
     # Should be loadable in actor
-    loaded = wrapper.load(device="cpu")
+    loaded = wrapper.load()
     result = loaded(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
@@ -111,7 +111,7 @@ def test_model_wrapper_actor_mode_pipeline():
     wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Load the pipeline
-    loaded = wrapper.load(device="cpu")
+    loaded = wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)

@@ -28,12 +28,12 @@ class MyPipeline:
         return self.decoder(self.encoder(data))
 
 pipeline = MyPipeline()
-actor_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # 2. Use in Ray Data actors
 class InferenceActor:
-    def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.to_pipeline()
+    def __init__(self, wrapper):
+        self.pipeline = wrapper.load()
 
     def __call__(self, batch):
         with torch.no_grad():
@@ -42,7 +42,7 @@ class InferenceActor:
 # 3. Process with multiple actors sharing the model
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"model_wrapper": model_wrapper},
+    fn_constructor_kwargs={"wrapper": wrapper},
     compute=ActorPoolStrategy(size=4),  # 4 actors share the model
 )
 ```

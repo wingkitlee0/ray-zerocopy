@@ -41,8 +41,8 @@ model_wrapper = ModelWrapper.from_model(model, mode="actor")
 # Step 3: Define the inference actor
 class InferenceActor:
     def __init__(self, model_wrapper):
-        # Load model once per actor (zero-copy)
-        self.model = model_wrapper.load(device="cpu")
+        # Load model once per actor (zero-copy, on CPU)
+        self.model = model_wrapper.load()
         self.model.eval()
 
     def __call__(self, batch):
@@ -116,7 +116,7 @@ model_wrapper = ModelWrapper.from_model(model, mode="actor")
 The wrapper:
 - Stores model weights in Ray's object store
 - Prepares for zero-copy loading across actors
-- Can specify target device when loading ("cpu" or "cuda:0")
+- Models are loaded on CPU; users handle device placement themselves
 
 ### Step 3: Define the Inference Actor
 
@@ -125,8 +125,8 @@ The actor loads the model and runs inference:
 ```python
 class InferenceActor:
     def __init__(self, model_wrapper):
-        # Load model (zero-copy from object store)
-        self.model = model_wrapper.load(device="cpu")
+        # Load model (zero-copy from object store, on CPU)
+        self.model = model_wrapper.load()
         self.model.eval()
 
     def __call__(self, batch):
@@ -210,46 +210,6 @@ results.write_parquet("s3://my-bucket/results/")
 - **Total: ~200MB**
 
 **75% memory reduction!**
-
-## GPU Inference
-
-To use GPU, just change the device when loading:
-
-```python
-# Wrap for GPU (device specified at load time)
-model_wrapper = ModelWrapper.from_model(model, mode="actor")
-
-# Request GPU in map_batches
-results = ds.map_batches(
-    InferenceActor,
-    fn_constructor_kwargs={"model_wrapper": model_wrapper},
-    batch_size=32,
-    compute=ActorPoolStrategy(size=1),  # 1 actor per GPU
-    num_gpus=1  # Request 1 GPU
-)
-```
-
-And update the actor to load on GPU:
-
-```python
-class InferenceActor:
-    def __init__(self, model_wrapper):
-        self.model = model_wrapper.load(device="cuda:0")
-        self.model.eval()
-```
-
-And move inputs to GPU in the actor:
-
-```python
-def __call__(self, batch):
-    inputs = torch.tensor(batch["data"], dtype=torch.float32)
-    inputs = inputs.to("cuda:0")  # Move to GPU
-
-    with torch.no_grad():
-        outputs = self.model(inputs)
-
-    return {"predictions": outputs.cpu().numpy()}  # Move back to CPU
-```
 
 ## Next Steps
 

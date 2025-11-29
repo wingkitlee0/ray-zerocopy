@@ -84,7 +84,8 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")  # Load once
+        self.pipeline = model_wrapper.load()  # Load once (on CPU)
+        self.pipeline = self.pipeline.to("cuda:0")  # Move to GPU if needed
 
     def __call__(self, batch):
         return self.pipeline(batch)  # Reuse loaded model
@@ -126,26 +127,7 @@ All actors reference shared memory:
 
 ## Device Placement
 
-You can specify which device to load models on when calling `.load()`:
-
-```python
-# CPU
-model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-
-class InferenceActor:
-    def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cpu")
-
-# GPU
-class InferenceActor:
-    def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
-
-# Specific GPU
-class InferenceActor:
-    def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:1")
-```
+Models are loaded on CPU by default. You can move them to any device after loading using standard PyTorch methods.
 
 ## TorchScript Support
 
@@ -181,5 +163,4 @@ See [TorchScript Guide](torchscript.md) for details.
 
 1. **Use actors for batch processing** - `ModelWrapper.from_model(..., mode="actor")` with Ray Data
 2. **Load once, infer many** - Actors amortize loading overhead
-3. **Match device to hardware** - Use `device="cuda:X"` in `load()` for GPU inference
-4. **Profile your workload** - Measure memory usage with/without zero-copy
+3. **Profile your workload** - Measure memory usage with/without zero-copy

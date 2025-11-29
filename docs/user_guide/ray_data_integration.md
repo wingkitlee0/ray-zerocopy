@@ -34,7 +34,8 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # 3. Define actor
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
+        self.pipeline = model_wrapper.load()
+        self.pipeline = self.pipeline.to("cuda:0")
 
     def __call__(self, batch):
         return self.pipeline(batch["data"])
@@ -83,58 +84,9 @@ results = ds.map_batches(
 ```
 
 **Rule of thumb:**
-- Larger batch = better GPU utilization
+- Larger batch = better throughput
 - Smaller batch = more frequent checkpoints
 - Start with 32-128 and tune
-
-## GPU Inference
-
-### Single GPU per Actor
-
-```python
-model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-
-class InferenceActor:
-    def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
-
-results = ds.map_batches(
-    InferenceActor,
-    fn_constructor_kwargs={"model_wrapper": model_wrapper},
-    compute=ActorPoolStrategy(size=1),  # 1 actor per GPU
-    num_gpus=1  # Request 1 GPU per actor
-)
-```
-
-### Multiple GPUs
-
-```python
-# Let Ray assign GPUs automatically
-results = ds.map_batches(
-    InferenceActor,
-    fn_constructor_kwargs={"model_wrapper": model_wrapper},
-    compute=ActorPoolStrategy(size=4),  # 4 actors
-    num_gpus=1  # Each actor gets 1 GPU
-)
-```
-
-Ray automatically distributes actors across available GPUs.
-
-### Explicit GPU Assignment
-
-For more control:
-
-```python
-class InferenceActor:
-    def __init__(self, model_wrapper, gpu_id):
-        # Override device
-        self.pipeline = model_wrapper.load(device=f"cuda:{gpu_id}")
-
-    def __call__(self, batch):
-        return self.pipeline(batch["data"])
-
-# You'll need to manually manage GPU IDs
-```
 
 ## Data Sources
 
@@ -254,8 +206,8 @@ ActorPoolStrategy(size=1)  # ❌
 # Too many: Memory issues
 ActorPoolStrategy(size=100)  # ❌
 
-# Match GPUs: One actor per GPU
-ActorPoolStrategy(size=num_gpus)  # ✅
+# Match available resources
+ActorPoolStrategy(size=4)  # ✅
 ```
 
 ### 3. Prefetch
@@ -334,8 +286,7 @@ results = ds.map_batches(
     InferenceActor,
     fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
-    compute=ActorPoolStrategy(size=4),
-    num_gpus=1
+    compute=ActorPoolStrategy(size=4)
 )
 
 # Write results
@@ -346,11 +297,10 @@ results.write_parquet("s3://my-bucket/results/")
 
 1. **Use ModelWrapper.from_model(..., mode="actor")** - For Ray Data
 2. **Load in __init__** - Not in __call__
-3. **One actor per GPU** - For GPU inference
-4. **Tune batch size** - Balance throughput and memory
-5. **Profile first** - Measure before optimizing
-6. **Handle errors** - Implement try/except in actors
-7. **Monitor memory** - Watch for OOM errors
+3. **Tune batch size** - Balance throughput and memory
+4. **Profile first** - Measure before optimizing
+5. **Handle errors** - Implement try/except in actors
+6. **Monitor memory** - Watch for OOM errors
 
 ## Next Steps
 

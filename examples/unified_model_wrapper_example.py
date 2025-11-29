@@ -90,8 +90,8 @@ def example_actor_mode():
     @ray.remote
     class InferenceActor:
         def __init__(self, model_wrapper):
-            # Load the model with zero-copy in the actor
-            self.model = model_wrapper.load(device="cpu")
+            # Load the model with zero-copy in the actor (on CPU)
+            self.model = model_wrapper.load()
 
         def predict(self, x):
             return self.model(x)
@@ -149,8 +149,8 @@ def example_pipeline_actor_mode():
     @ray.remote
     class PipelineActor:
         def __init__(self, pipeline_wrapper):
-            # Load the pipeline with zero-copy
-            self.pipeline = pipeline_wrapper.load(device="cpu")
+            # Load the pipeline with zero-copy (on CPU)
+            self.pipeline = pipeline_wrapper.load()
 
         def process(self, x):
             return self.pipeline(x)
@@ -196,7 +196,7 @@ def example_mode_comparison():
     print(f"✓ Task mode result shape: {task_result.shape}")
 
     # Demonstrate actor mode usage
-    loaded_model = actor_wrapper.load(device="cpu")
+    loaded_model = actor_wrapper.load()
     actor_result = loaded_model(test_input)
     print(f"✓ Actor mode result shape: {actor_result.shape}")
 

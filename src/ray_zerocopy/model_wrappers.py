@@ -16,7 +16,7 @@ Key API Patterns:
 
 2. **Actor Mode** - For Ray Data and long-running actors:
    - Use `ModelWrapper.from_model(..., mode="actor")`
-   - Load in actor: `model = wrapper.load(device="cuda:0")`
+   - Load in actor: `model = wrapper.load()`
 
 Usage Examples:
 
@@ -33,7 +33,8 @@ Usage Examples:
     >>>
     >>> class InferenceActor:
     ...     def __init__(self, model_wrapper):
-    ...         self.model = model_wrapper.load(device="cuda:0")
+    ...         self.model = model_wrapper.load()
+    ...         self.model = self.model.to("cuda:0")  # Move to GPU if needed
     ...     def __call__(self, batch):
     ...         return self.model(batch["data"])
     >>>
@@ -111,7 +112,8 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
         >>>
         >>> class InferenceActor:
         ...     def __init__(self, model_wrapper):
-        ...         self.model = model_wrapper.load(device="cuda:0")
+        ...         self.model = model_wrapper.load()
+        ...         self.model = self.model.to("cuda:0")  # Move to GPU if needed
         ...     def __call__(self, batch):
         ...         return self.model(batch["data"])
         >>>
@@ -185,7 +187,7 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
 
         Example - Actor mode:
             >>> wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-            >>> # In actor: pipeline = wrapper.unwrap(device="cuda:0")
+            >>> # In actor: pipeline = wrapper.load()
         """
         is_standalone = isinstance(model_or_pipeline, torch.nn.Module)
 
@@ -278,32 +280,30 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             method_names=method_names,
         )
 
-    def load(
-        self, device: Optional[str] = None, _use_fast_load: bool = False
-    ) -> torch.nn.Module | T:
+    def load(self, _use_fast_load: bool = False) -> torch.nn.Module | T:
         """Load the model/pipeline from the wrapper.
 
         This function is to be called from within an actor's __init__ to deserialize and
         load the model from Ray's object store using zero-copy.
 
-        Note: For task mode wrappers, this returns the rewritten pipeline (device parameter ignored).
+        Note: For task mode wrappers, this returns the rewritten pipeline.
         For actor mode wrappers, this loads the pipeline from the object store.
+        Models are loaded on CPU. Users should handle device placement themselves after loading.
 
         Args:
-            device: Device to move models to (e.g., "cuda:0", "cpu").
-                   If None, models remain on CPU. Defaults to None.
-                   Only applies to actor mode.
             _use_fast_load: Use faster but slightly riskier loading method. Defaults to False.
                            Only applies to actor mode.
 
         Returns:
-            The deserialized pipeline ready for inference
+            The deserialized pipeline ready for inference (on CPU)
 
         Example:
             >>> class InferenceActor:
             ...     def __init__(self, model_wrapper):
-            ...         # Load model on GPU
-            ...         self.model = model_wrapper.load(device="cuda:0")
+            ...         # Load model (on CPU)
+            ...         self.model = model_wrapper.load()
+            ...         # Move to GPU if needed
+            ...         self.model = self.model.to("cuda:0")
             ...
             ...     def __call__(self, batch):
             ...         return self.model(batch["data"])
@@ -323,7 +323,7 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             pipeline = rzc_nn.load_pipeline_for_actors(
                 self._skeleton,
                 self._model_refs,
-                device=device,
+                device=None,
                 use_fast_load=_use_fast_load,
             )
 
@@ -333,9 +333,7 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             else:
                 return pipeline
 
-    def to_pipeline(
-        self, device: Optional[str] = None, _use_fast_load: bool = False
-    ) -> torch.nn.Module | T:
+    def to_pipeline(self, _use_fast_load: bool = False) -> torch.nn.Module | T:
         """Deprecated: Use load() instead.
 
         This method is deprecated and will be removed in a future version.
@@ -348,14 +346,14 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.load(device=device, _use_fast_load=_use_fast_load)
+        return self.load(_use_fast_load=_use_fast_load)
 
     def __call__(self, *args, **kwargs):
         """Forward calls to the rewritten pipeline (task mode only)."""
         if self._mode != "task":
             raise TypeError(
                 "Cannot call actor mode wrapper directly. "
-                "Use wrapper.load(device=...) in the actor's __init__ first."
+                "Use wrapper.load() in the actor's __init__ first."
             )
         if self._rewritten is None:
             raise ValueError("Task mode wrapper has no rewritten pipeline")
@@ -378,7 +376,7 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
         if self._mode != "task":
             raise AttributeError(
                 "Cannot access attributes on actor mode wrapper. "
-                "Use wrapper.load(device=...) in the actor's __init__ first."
+                "Use wrapper.load() in the actor's __init__ first."
             )
         if self._rewritten is None:
             raise ValueError("Task mode wrapper has no rewritten pipeline")

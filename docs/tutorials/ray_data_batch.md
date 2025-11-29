@@ -40,7 +40,8 @@ model_wrapper = ModelWrapper.from_model(model, mode="actor")
 # Step 3: Define actor with preprocessing
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.model = model_wrapper.load(device="cuda:0")
+        self.model = model_wrapper.load()
+        self.model = self.model.to("cuda:0")
 
         # Preprocessing pipeline
         self.transform = transforms.Compose([
@@ -103,7 +104,8 @@ Preprocessing is often done inside the actor for efficiency:
 ```python
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.model = model_wrapper.load(device="cuda:0")
+        self.model = model_wrapper.load()
+        self.model = self.model.to("cuda:0")
         self.preprocessor = MyPreprocessor()  # Initialize once
 
     def __call__(self, batch):
@@ -151,7 +153,8 @@ Add postprocessing for clean outputs:
 ```python
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.model = model_wrapper.load(device="cuda:0")
+        self.model = model_wrapper.load()
+        self.model = self.model.to("cuda:0")
 
     def __call__(self, batch):
         # Inference
@@ -175,7 +178,8 @@ Handle errors gracefully:
 ```python
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.model = model_wrapper.load(device="cuda:0")
+        self.model = model_wrapper.load()
+        self.model = self.model.to("cuda:0")
         self.error_count = 0
 
     def __call__(self, batch):
@@ -343,7 +347,8 @@ Add logging in actors:
 ```python
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.model = model_wrapper.load(device="cuda:0")
+        self.model = model_wrapper.load()
+        self.model = self.model.to("cuda:0")
         self.batch_count = 0
 
     def __call__(self, batch):

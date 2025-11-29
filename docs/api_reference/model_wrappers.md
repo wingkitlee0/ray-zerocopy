@@ -38,7 +38,7 @@ wrapper = ModelWrapper.from_model(model)
 class InferenceActor:
     def __init__(self, model_wrapper):
         # Load pipeline with zero-copy
-        self.model = model_wrapper.load(device="cuda:0")
+        self.model = model_wrapper.load()
 
     def __call__(self, batch):
         return self.model(batch["data"])
@@ -100,15 +100,14 @@ wrapped = ModelWrapper.for_tasks(pipeline)
 Load the model/pipeline (actor mode only).
 
 ```python
-model = wrapper.load(device="cuda:0")
+model = wrapper.load()
 ```
 
 **Parameters:**
-- `device` (optional) - Target device ("cpu", "cuda:0", etc.)
 - `_use_fast_load` (optional) - Enable fast loading (experimental)
 
 **Returns:**
-- Loaded model or pipeline
+- Loaded model or pipeline (on CPU). Users should handle device placement themselves.
 
 ## Supported Model Types
 
@@ -149,7 +148,7 @@ wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # Use in actor
 class Actor:
     def __init__(self, wrapper):
-        self.model = wrapper.load(device="cuda:0")
+        self.model = wrapper.load()
 ```
 
 ### Task Mode
@@ -166,28 +165,12 @@ result = wrapped(data)  # Each call spawns a Ray task
 
 ## Advanced Usage
 
-### Custom Device Selection
-
-You can override the device when loading:
-
-```python
-wrapper = ModelWrapper.from_model(model, mode="actor")
-
-class Actor:
-    def __init__(self, wrapper, gpu_id):
-        # Different actors can use different GPUs
-        self.model = wrapper.load(device=f"cuda:{gpu_id}")
-```
-
 ### Conditional Fast Loading
 
 ```python
 class Actor:
     def __init__(self, wrapper, use_fast):
-        self.model = wrapper.load(
-            device="cuda:0",
-            _use_fast_load=use_fast
-        )
+        self.model = wrapper.load(_use_fast_load=use_fast)
 ```
 
 ### Inspecting Wrapper State

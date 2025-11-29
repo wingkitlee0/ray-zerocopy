@@ -87,8 +87,8 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # Step 4: Define inference actor
 class PipelineInferenceActor:
     def __init__(self, model_wrapper):
-        # Load complete pipeline (both models via zero-copy)
-        self.pipeline = model_wrapper.load(device="cpu")
+        # Load complete pipeline (both models via zero-copy, on CPU)
+        self.pipeline = model_wrapper.load()
         print("Actor initialized with pipeline")
 
     def __call__(self, batch):
@@ -323,10 +323,11 @@ Works the same as basic tutorial:
 ```python
 model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
-# Update actor to load on GPU
+# Update actor to move to GPU after loading
 class PipelineInferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
+        self.pipeline = model_wrapper.load()
+        self.pipeline = self.pipeline.to("cuda:0")
 
 results = ds.map_batches(
     PipelineInferenceActor,
@@ -368,7 +369,7 @@ pipeline = TextProcessingPipeline()
 model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # In actor:
-# self.pipeline = model_wrapper.load(device="cuda:0")
+# self.pipeline = model_wrapper.load()
 # The BERT model (400MB+) and classifier are zero-copy shared
 # The tokenizer is copied to each actor (small overhead)
 ```

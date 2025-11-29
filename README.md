@@ -38,7 +38,7 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # 3. Define actor UDF that loads the pipeline
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.load(device="cuda:0")
+        self.pipeline = model_wrapper.load()
 
     def __call__(self, batch):
         with torch.no_grad():
@@ -158,7 +158,8 @@ class MyPipeline:
 
 # For Ray Actors and Ray Data
 model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
-# ... in actor: self.pipeline = model_wrapper.load(device="cuda:0")
+# ... in actor:
+# self.pipeline = model_wrapper.load()
 
 # For Ray Tasks
 wrapped = ModelWrapper.for_tasks(pipeline)
@@ -180,7 +181,7 @@ result = wrapped(data)  # Runs in Ray task with zero-copy
 # ModelWrapper - For Ray Actors and Ray Data
 model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # ... in actor __init__:
-pipeline = model_wrapper.load(device="cuda:0")  # Load with zero-copy in actor
+pipeline = model_wrapper.load()  # Load with zero-copy in actor
 ```
 
 ### TorchScript Support
