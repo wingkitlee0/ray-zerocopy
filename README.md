@@ -18,7 +18,7 @@ This library enables efficient model sharing across Ray workers using zero-copy 
 
 ```python
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 
 # 1. Create your pipeline (a class with nn.Module attributes)
 class MyPipeline:
@@ -32,13 +32,13 @@ class MyPipeline:
 
 pipeline = MyPipeline()
 
-# 2. Wrap with ActorWrapper for zero-copy sharing
-actor_wrapper = ActorWrapper(pipeline)
+# 2. Wrap with ModelWrapper for zero-copy sharing
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # 3. Define actor UDF that loads the pipeline
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
 
     def __call__(self, batch):
         with torch.no_grad():
@@ -47,7 +47,7 @@ class InferenceActor:
 # 4. Use with Ray Data
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),  # 4 actors share the model
 )
 ```
@@ -56,31 +56,31 @@ results = ds.map_batches(
 
 ```python
 import ray
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 
 # Wrap pipeline for actors
 pipeline = MyPipeline()
-actor_wrapper = ActorWrapper(pipeline)
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # Define inference actor
 @ray.remote
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
 
     def predict(self, data):
         with torch.no_grad():
             return self.pipeline(data)
 
 # Create actors that share the model
-actors = [InferenceActor.remote(actor_wrapper) for _ in range(4)]
+actors = [InferenceActor.remote(model_wrapper) for _ in range(4)]
 results = ray.get([actor.predict.remote(data) for actor in actors])
 ```
 
 ### For Ray Tasks (Ad-hoc Inference)
 
 ```python
-from ray_zerocopy import TaskWrapper
+from ray_zerocopy import ModelWrapper
 
 # A Pipeline is a class with nn.Module attributes
 class MyPipeline:
@@ -93,7 +93,7 @@ class MyPipeline:
         return self.decoder(encoded)
 
 pipeline = MyPipeline()
-wrapped = TaskWrapper(pipeline)
+wrapped = ModelWrapper.for_tasks(pipeline)
 
 # Each call spawns a Ray task with zero-copy model loading
 result = wrapped(data)
@@ -117,11 +117,11 @@ pip install -e .
 
 | Scenario | Use This |
 |----------|----------|
-| Ray Data `map_batches` batch inference | `ActorWrapper` with Ray Data Actor UDF |
-| High-throughput batch inference | `ActorWrapper` with Ray Data Actor UDF |
-| Long-running inference service | `ActorWrapper` with Ray Actor |
-| Ad-hoc task-based inference | `TaskWrapper` with Ray Task |
-| Sporadic inference calls | `TaskWrapper` with Ray Task |
+| Ray Data `map_batches` batch inference | `ModelWrapper.from_model(..., mode="actor")` with Ray Data Actor UDF |
+| High-throughput batch inference | `ModelWrapper.from_model(..., mode="actor")` with Ray Data Actor UDF |
+| Long-running inference service | `ModelWrapper.from_model(..., mode="actor")` with Ray Actor |
+| Ad-hoc task-based inference | `ModelWrapper.for_tasks()` with Ray Task |
+| Sporadic inference calls | `ModelWrapper.for_tasks()` with Ray Task |
 
 ## Memory Savings Example
 
@@ -157,11 +157,11 @@ class MyPipeline:
         return self.classifier(features)
 
 # For Ray Actors and Ray Data
-actor_wrapper = ActorWrapper(pipeline)
-# ... in actor: self.pipeline = actor_wrapper.load()
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+# ... in actor: self.pipeline = model_wrapper.load(device="cuda:0")
 
 # For Ray Tasks
-wrapped = TaskWrapper(pipeline)
+wrapped = ModelWrapper.for_tasks(pipeline)
 ```
 
 The library automatically identifies `nn.Module` attributes and applies zero-copy sharing to them, while preserving other attributes like config dictionaries.
@@ -171,16 +171,16 @@ The library automatically identifies `nn.Module` attributes and applies zero-cop
 ### Wrapper Classes
 
 ```python
-from ray_zerocopy import TaskWrapper, ActorWrapper
+from ray_zerocopy import ModelWrapper
 
-# TaskWrapper - For Ray Tasks
-wrapped = TaskWrapper(pipeline)
+# ModelWrapper - For Ray Tasks
+wrapped = ModelWrapper.for_tasks(pipeline)
 result = wrapped(data)  # Runs in Ray task with zero-copy
 
-# ActorWrapper - For Ray Actors and Ray Data
-actor_wrapper = ActorWrapper(pipeline)
+# ModelWrapper - For Ray Actors and Ray Data
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # ... in actor __init__:
-pipeline = actor_wrapper.load()  # Load with zero-copy in actor
+pipeline = model_wrapper.load(device="cuda:0")  # Load with zero-copy in actor
 ```
 
 ### TorchScript Support

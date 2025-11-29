@@ -58,48 +58,41 @@ All `nn.Module` instances are automatically identified and shared via zero-copy,
 
 ## Wrapper Classes
 
-### TaskWrapper
+### ModelWrapper
 
-Wraps a pipeline for execution in Ray tasks. Each method call spawns a new Ray task with zero-copy model loading.
+Unified wrapper for both task and actor execution modes. Supports zero-copy model sharing for nn.Module models.
+
+**Task Mode** - For ad-hoc inference with Ray tasks:
 
 ```python
-from ray_zerocopy import TaskWrapper
+from ray_zerocopy import ModelWrapper
 
 pipeline = MyPipeline()
-wrapped = TaskWrapper(pipeline)
+wrapped = ModelWrapper.for_tasks(pipeline)
 
-# This spawns a Ray task
+# Each call spawns a Ray task
 result = wrapped(data)
 ```
 
-**When to use:**
-- Ad-hoc inference calls
-- Don't need persistent state
-- Simple parallelism
-
-### ActorWrapper
-
-Wraps a pipeline for loading inside Ray actors. Actors load the model once and reuse it.
+**Actor Mode** - For Ray Data and long-running actors:
 
 ```python
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 
 pipeline = MyPipeline()
-actor_wrapper = ActorWrapper(pipeline)
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()  # Load once
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")  # Load once
 
     def __call__(self, batch):
         return self.pipeline(batch)  # Reuse loaded model
 ```
 
 **When to use:**
-- Ray Data `map_batches`
-- Long-running inference service
-- Batch processing workloads
-- Need to maintain state
+- **Task mode**: Ad-hoc inference calls, don't need persistent state
+- **Actor mode**: Ray Data `map_batches`, long-running inference service, batch processing workloads
 
 ## Memory Model
 
@@ -133,26 +126,25 @@ All actors reference shared memory:
 
 ## Device Placement
 
-You can specify which device to load models on:
+You can specify which device to load models on when calling `.load()`:
 
 ```python
 # CPU
-actor_wrapper = ActorWrapper(pipeline, device="cpu")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+
+class InferenceActor:
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cpu")
 
 # GPU
-actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+class InferenceActor:
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
 
 # Specific GPU
-actor_wrapper = ActorWrapper(pipeline, device="cuda:1")
-```
-
-The device is applied when calling `.load()` in the actor:
-
-```python
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        # Model loaded to the device specified in ActorWrapper
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:1")
 ```
 
 ## TorchScript Support
@@ -187,7 +179,7 @@ See [TorchScript Guide](torchscript.md) for details.
 
 ### Best Practices
 
-1. **Use actors for batch processing** - `ActorWrapper` with Ray Data
+1. **Use actors for batch processing** - `ModelWrapper.from_model(..., mode="actor")` with Ray Data
 2. **Load once, infer many** - Actors amortize loading overhead
-3. **Match device to hardware** - Use `device="cuda:X"` for GPU inference
+3. **Match device to hardware** - Use `device="cuda:X"` in `load()` for GPU inference
 4. **Profile your workload** - Measure memory usage with/without zero-copy

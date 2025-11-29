@@ -22,19 +22,19 @@ Together, they enable large-scale inference with minimal memory footprint.
 ```python
 import ray
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 
 # 1. Load data
 ds = ray.data.read_parquet("s3://my-data/")
 
 # 2. Prepare model wrapper
 pipeline = MyPipeline()
-actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # 3. Define actor
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
 
     def __call__(self, batch):
         return self.pipeline(batch["data"])
@@ -42,7 +42,7 @@ class InferenceActor:
 # 4. Run inference
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),
     num_gpus=1
 )
@@ -61,7 +61,7 @@ from ray.data import ActorPoolStrategy
 # 4 actors sharing the model
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),
     num_gpus=1
 )
@@ -76,7 +76,7 @@ Control how much data each actor processes:
 ```python
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,  # Process 32 items at a time
     compute=ActorPoolStrategy(size=4)
 )
@@ -92,11 +92,15 @@ results = ds.map_batches(
 ### Single GPU per Actor
 
 ```python
-actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+
+class InferenceActor:
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
 
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=1),  # 1 actor per GPU
     num_gpus=1  # Request 1 GPU per actor
 )
@@ -108,7 +112,7 @@ results = ds.map_batches(
 # Let Ray assign GPUs automatically
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),  # 4 actors
     num_gpus=1  # Each actor gets 1 GPU
 )
@@ -122,9 +126,9 @@ For more control:
 
 ```python
 class InferenceActor:
-    def __init__(self, actor_wrapper, gpu_id):
+    def __init__(self, model_wrapper, gpu_id):
         # Override device
-        self.pipeline = actor_wrapper.load(device=f"cuda:{gpu_id}")
+        self.pipeline = model_wrapper.load(device=f"cuda:{gpu_id}")
 
     def __call__(self, batch):
         return self.pipeline(batch["data"])
@@ -177,8 +181,8 @@ results.write_csv("s3://bucket/results/")
 
 ```python
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
         self.preprocessor = Preprocessor()
         self.postprocessor = Postprocessor()
 
@@ -202,7 +206,7 @@ ds = ds.map_batches(preprocess_fn)
 # Inference
 ds = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4)
 )
 
@@ -261,7 +265,7 @@ Ray Data prefetches data by default. Increase for better pipelining:
 ```python
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     compute=ActorPoolStrategy(size=4),
     num_gpus=1,
     prefetch_batches=2  # Prefetch 2 batches
@@ -273,7 +277,7 @@ results = ds.map_batches(
 ```python
 import ray
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 import torch
 from torchvision import transforms
 
@@ -289,12 +293,12 @@ class ImageClassifier:
 
 # Create wrapper
 pipeline = ImageClassifier()
-actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # Define actor with preprocessing
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
         self.transform = transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -328,7 +332,7 @@ ds = ray.data.read_images("s3://my-bucket/images/")
 # Run inference
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),
     num_gpus=1
@@ -340,7 +344,7 @@ results.write_parquet("s3://my-bucket/results/")
 
 ## Best Practices
 
-1. **Use ActorWrapper** - Not TaskWrapper for Ray Data
+1. **Use ModelWrapper.from_model(..., mode="actor")** - For Ray Data
 2. **Load in __init__** - Not in __call__
 3. **One actor per GPU** - For GPU inference
 4. **Tune batch size** - Balance throughput and memory
@@ -352,4 +356,4 @@ results.write_parquet("s3://my-bucket/results/")
 
 - See [Ray Data Documentation](https://docs.ray.io/en/latest/data/data.html)
 - Try [Tutorials](../tutorials/index.md) with Ray Data examples
-- Check [ActorWrapper API](../api_reference/wrappers.md)
+- Check [ModelWrapper API](../api_reference/model_wrappers.md)

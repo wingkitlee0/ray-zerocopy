@@ -13,9 +13,9 @@ import torch.nn as nn
 from ray.data import ActorPoolStrategy
 
 from ray_zerocopy import (
-    ModelWrapper,
     JITActorWrapper,
     JITTaskWrapper,
+    ModelWrapper,
 )
 
 T = TypeVar("T")

@@ -8,7 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import ModelWrapper, JITActorWrapper, JITTaskWrapper
+from ray_zerocopy import JITActorWrapper, JITTaskWrapper, ModelWrapper
 
 
 # Test models and pipelines

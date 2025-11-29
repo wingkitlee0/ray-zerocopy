@@ -25,7 +25,7 @@ import ray
 import torch
 import torch.nn as nn
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 
 # Step 1: Define model components
 class Encoder(nn.Module):
@@ -82,13 +82,13 @@ pipeline = EncoderDecoderPipeline(input_dim=128, latent_dim=64, output_dim=10)
 pipeline.set_eval()
 
 # Wrap entire pipeline
-actor_wrapper = ActorWrapper(pipeline, device="cpu")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # Step 4: Define inference actor
 class PipelineInferenceActor:
-    def __init__(self, actor_wrapper):
+    def __init__(self, model_wrapper):
         # Load complete pipeline (both models via zero-copy)
-        self.pipeline = actor_wrapper.load()
+        self.pipeline = model_wrapper.load(device="cpu")
         print("Actor initialized with pipeline")
 
     def __call__(self, batch):
@@ -109,7 +109,7 @@ ds = ray.data.from_items(data)
 # Step 6: Run inference with 3 actors
 results = ds.map_batches(
     PipelineInferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=25,
     compute=ActorPoolStrategy(size=3),
 )
@@ -182,13 +182,13 @@ Key points:
 
 ### Step 3: Wrap the Pipeline
 
-Wrap the entire pipeline with `ActorWrapper`:
+Wrap the entire pipeline with `ModelWrapper`:
 
 ```python
 pipeline = EncoderDecoderPipeline()
 pipeline.set_eval()
 
-actor_wrapper = ActorWrapper(pipeline, device="cpu")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 ```
 
 ray-zerocopy automatically:
@@ -202,9 +202,9 @@ The actor loads the complete pipeline:
 
 ```python
 class PipelineInferenceActor:
-    def __init__(self, actor_wrapper):
+    def __init__(self, model_wrapper):
         # Loads both encoder and decoder via zero-copy
-        self.pipeline = actor_wrapper.load()
+        self.pipeline = model_wrapper.load(device="cpu")
 
     def __call__(self, batch):
         inputs = torch.tensor(batch["data"], dtype=torch.float32)
@@ -230,7 +230,7 @@ ds = ray.data.from_items(data)
 
 results = ds.map_batches(
     PipelineInferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=25,
     compute=ActorPoolStrategy(size=3),
 )
@@ -321,11 +321,16 @@ Each actor gets its own copy of `preprocessor`, `config`, and `stats`, but share
 Works the same as basic tutorial:
 
 ```python
-actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
+
+# Update actor to load on GPU
+class PipelineInferenceActor:
+    def __init__(self, model_wrapper):
+        self.pipeline = model_wrapper.load(device="cuda:0")
 
 results = ds.map_batches(
     PipelineInferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=25,
     compute=ActorPoolStrategy(size=1),
     num_gpus=1
@@ -360,8 +365,10 @@ class TextProcessingPipeline:
 
 # Use with ray-zerocopy
 pipeline = TextProcessingPipeline()
-actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
+model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
+# In actor:
+# self.pipeline = model_wrapper.load(device="cuda:0")
 # The BERT model (400MB+) and classifier are zero-copy shared
 # The tokenizer is copied to each actor (small overhead)
 ```
@@ -370,4 +377,4 @@ actor_wrapper = ActorWrapper(pipeline, device="cuda:0")
 
 - Learn about [Ray Data Integration](../user_guide/ray_data_integration.md)
 - See [TorchScript Support](../user_guide/torchscript.md) for compiled pipelines
-- Check the [API Reference](../api_reference/wrappers.md) for all options
+- Check the [API Reference](../api_reference/model_wrappers.md) for all options

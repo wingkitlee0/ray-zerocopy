@@ -18,7 +18,7 @@ import ray
 import torch
 import torch.nn as nn
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 from torchvision import transforms
 from PIL import Image
 
@@ -35,12 +35,12 @@ class ImageClassifier(nn.Module):
 # Step 2: Wrap model
 model = ImageClassifier()
 model.eval()
-actor_wrapper = ActorWrapper(model, device="cuda:0")
+model_wrapper = ModelWrapper.from_model(model, mode="actor")
 
 # Step 3: Define actor with preprocessing
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.model = model_wrapper.load(device="cuda:0")
 
         # Preprocessing pipeline
         self.transform = transforms.Compose([
@@ -83,7 +83,7 @@ ds = ray.data.read_images("s3://my-bucket/images/")
 # Step 5: Run inference
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),
     num_gpus=1
@@ -102,8 +102,8 @@ Preprocessing is often done inside the actor for efficiency:
 
 ```python
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.model = model_wrapper.load(device="cuda:0")
         self.preprocessor = MyPreprocessor()  # Initialize once
 
     def __call__(self, batch):
@@ -132,7 +132,7 @@ ds = ds.map_batches(preprocess_fn, batch_size=100)
 # Step 2: Inference (GPU-intensive)
 ds = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),
     num_gpus=1
@@ -150,8 +150,8 @@ Add postprocessing for clean outputs:
 
 ```python
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.model = model_wrapper.load(device="cuda:0")
 
     def __call__(self, batch):
         # Inference
@@ -174,8 +174,8 @@ Handle errors gracefully:
 
 ```python
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.model = model_wrapper.load(device="cuda:0")
         self.error_count = 0
 
     def __call__(self, batch):
@@ -279,7 +279,7 @@ Ray Data prefetches batches automatically. Increase for better pipelining:
 ```python
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),
     num_gpus=1,
@@ -342,8 +342,8 @@ Add logging in actors:
 
 ```python
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.model = model_wrapper.load(device="cuda:0")
         self.batch_count = 0
 
     def __call__(self, batch):
@@ -363,7 +363,7 @@ Here's a full production-ready pipeline:
 import ray
 import torch
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 import logging
 
 # Configure logging
@@ -383,12 +383,12 @@ class ProductionModel(torch.nn.Module):
 # Wrap model
 model = ProductionModel()
 model.eval()
-actor_wrapper = ActorWrapper(model, device="cuda:0")
+model_wrapper = ModelWrapper.from_model(model, mode="actor")
 
 # Define production actor
 class ProductionActor:
-    def __init__(self, actor_wrapper):
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        self.model = model_wrapper.load(device="cuda:0")
         self.batch_count = 0
         self.error_count = 0
         logger.info("Actor initialized")
@@ -437,7 +437,7 @@ def main():
     logger.info("Running inference...")
     results = ds.map_batches(
         ProductionActor,
-        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+        fn_constructor_kwargs={"model_wrapper": model_wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=4),
         num_gpus=1,
@@ -464,6 +464,12 @@ if __name__ == "__main__":
 6. **Profile first** - Measure before optimizing
 7. **Partition output** - Don't create huge files
 8. **Monitor memory** - Watch for OOM errors
+
+## Next Steps
+
+- See [User Guide](../user_guide/index.md) for more patterns
+- Check [API Reference](../api_reference/index.md) for all options
+- Read [Ray Data Docs](https://docs.ray.io/en/latest/data/data.html) for advanced features
 
 ## Troubleshooting
 

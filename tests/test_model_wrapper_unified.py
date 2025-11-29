@@ -2,9 +2,9 @@
 Tests for the unified ModelWrapper API with both task and actor modes.
 """
 
+import ray
 import torch
 import torch.nn as nn
-import ray
 
 from ray_zerocopy import ModelWrapper
 
@@ -96,7 +96,7 @@ def test_model_wrapper_actor_mode_basic():
         assert "actor mode wrapper" in str(e).lower()
 
     # Should be loadable in actor
-    loaded = wrapper.to_pipeline(device="cpu")
+    loaded = wrapper.load(device="cpu")
     result = loaded(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
@@ -111,7 +111,7 @@ def test_model_wrapper_actor_mode_pipeline():
     wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Load the pipeline
-    loaded = wrapper.to_pipeline(device="cpu")
+    loaded = wrapper.load(device="cpu")
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -156,7 +156,7 @@ def test_model_wrapper_pickling_actor_mode():
     restored = pickle.loads(pickled)
 
     # Should still work after loading
-    loaded = restored.to_pipeline(device="cpu")
+    loaded = restored.load(device="cpu")
     test_input = torch.randn(3, 10)
     result = loaded(test_input)
 
@@ -244,7 +244,7 @@ def test_model_wrapper_serialize_deserialize():
     restored = ModelWrapper.deserialize(**serialized)
 
     # Should work after loading
-    loaded = restored.to_pipeline(device="cpu")
+    loaded = restored.load(device="cpu")
     test_input = torch.randn(3, 10)
     result = loaded(test_input)
 

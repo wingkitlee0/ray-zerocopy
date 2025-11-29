@@ -49,7 +49,7 @@ class InferenceActor:
     """Actor for distributed inference using ModelWrapper."""
 
     def __init__(self, model_wrapper: ModelWrapper[nn.Module]):
-        self.model = model_wrapper.to_pipeline()
+        self.model = model_wrapper.load()
         self.model.eval()
         print(
             f"Actor initialized with model on device: {next(self.model.parameters()).device}"

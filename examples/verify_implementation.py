@@ -3,9 +3,9 @@
 Quick verification script to demonstrate the new unified ModelWrapper API.
 """
 
+import ray
 import torch
 import torch.nn as nn
-import ray
 
 from ray_zerocopy import ModelWrapper
 
@@ -24,10 +24,10 @@ def verify_task_mode():
     print("✓ Testing task mode...")
     model = SimpleModel()
     wrapper = ModelWrapper.from_model(model, mode="task")
-    
+
     test_input = torch.randn(3, 10)
     result = wrapper(test_input)
-    
+
     assert result.shape == (3, 5), f"Expected shape (3, 5), got {result.shape}"
     print("  ✓ Task mode works correctly")
 
@@ -37,10 +37,10 @@ def verify_for_tasks_shortcut():
     print("✓ Testing for_tasks() shortcut...")
     model = SimpleModel()
     wrapper = ModelWrapper.for_tasks(model)
-    
+
     test_input = torch.randn(3, 10)
     result = wrapper(test_input)
-    
+
     assert result.shape == (3, 5), f"Expected shape (3, 5), got {result.shape}"
     print("  ✓ for_tasks() shortcut works correctly")
 
@@ -50,13 +50,13 @@ def verify_actor_mode():
     print("✓ Testing actor mode...")
     model = SimpleModel()
     wrapper = ModelWrapper.from_model(model, mode="actor")
-    
+
     # Load the model
     loaded = wrapper.to_pipeline(device="cpu")
-    
+
     test_input = torch.randn(3, 10)
     result = loaded(test_input)
-    
+
     assert result.shape == (3, 5), f"Expected shape (3, 5), got {result.shape}"
     print("  ✓ Actor mode works correctly")
 
@@ -64,16 +64,16 @@ def verify_actor_mode():
 def verify_backward_compatibility():
     """Verify backward compatibility with ModelWrapper API."""
     print("✓ Testing ModelWrapper API...")
-    
+
     model = SimpleModel()
-    
+
     # Task mode
     task_wrapper = ModelWrapper.for_tasks(model)
     test_input = torch.randn(3, 10)
     result = task_wrapper(test_input)
     assert result.shape == (3, 5)
     print("  ✓ Task mode works")
-    
+
     # Actor mode
     actor_wrapper = ModelWrapper.from_model(model, mode="actor")
     loaded = actor_wrapper.to_pipeline(device="cpu")
@@ -86,20 +86,20 @@ def main():
     print("=" * 60)
     print("Verifying Unified ModelWrapper Implementation")
     print("=" * 60)
-    
+
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True)
-    
+
     try:
         verify_task_mode()
         verify_for_tasks_shortcut()
         verify_actor_mode()
         verify_backward_compatibility()
-        
+
         print("\n" + "=" * 60)
         print("✓ All verifications passed!")
         print("=" * 60)
-        
+
     finally:
         ray.shutdown()
 

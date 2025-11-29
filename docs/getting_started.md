@@ -49,7 +49,7 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 # 3. Define actor UDF that loads the pipeline
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.to_pipeline()
+        self.pipeline = model_wrapper.load()
 
     def __call__(self, batch):
         with torch.no_grad():
@@ -77,7 +77,7 @@ model_wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 @ray.remote
 class InferenceActor:
     def __init__(self, model_wrapper):
-        self.pipeline = model_wrapper.to_pipeline()
+        self.pipeline = model_wrapper.load()
 
     def predict(self, data):
         with torch.no_grad():

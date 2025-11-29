@@ -7,7 +7,7 @@ import inspect
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import ModelWrapper, JITActorWrapper, JITTaskWrapper
+from ray_zerocopy import JITActorWrapper, JITTaskWrapper, ModelWrapper
 
 
 class MyPipeline:

@@ -6,18 +6,15 @@ This guide covers the key concepts and usage patterns for ray-zerocopy.
 :maxdepth: 2
 
 core_concepts
-tasks
-actors
 torchscript
 ray_data_integration
 ```
 
 ## Overview
 
-ray-zerocopy provides four main wrapper classes:
+ray-zerocopy provides wrapper classes for zero-copy model sharing:
 
-- **TaskWrapper** - For nn.Module models with Ray tasks
-- **ActorWrapper** - For nn.Module models with Ray actors
+- **ModelWrapper** - For nn.Module models (supports both task and actor modes)
 - **JITTaskWrapper** - For TorchScript models with Ray tasks
 - **JITActorWrapper** - For TorchScript models with Ray actors
 
@@ -27,19 +24,19 @@ Choose based on:
 
 ## Quick Decision Guide
 
-**Use TaskWrapper when:**
+**Use ModelWrapper.for_tasks() when:**
 - Running ad-hoc inference with Ray tasks
 - Don't need persistent state
 - Models are standard nn.Module
 
-**Use ActorWrapper when:**
+**Use ModelWrapper.from_model(..., mode="actor") when:**
 - Using Ray Data with `map_batches`
 - Need long-running inference service
 - Want to maintain state between calls
 - Models are standard nn.Module
 
 **Use JITTaskWrapper when:**
-- Same as TaskWrapper, but models are TorchScript compiled
+- Same as ModelWrapper.for_tasks(), but models are TorchScript compiled
 
 **Use JITActorWrapper when:**
-- Same as ActorWrapper, but models are TorchScript compiled
+- Same as ModelWrapper.from_model(..., mode="actor"), but models are TorchScript compiled
