@@ -285,7 +285,7 @@ def run_ray_core_normal(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": np.mean(worker_rss) if worker_rss else 0,
         "avg_uss_per_worker_mb": np.mean(worker_uss) if worker_uss else 0,
         "runtime_s": runtime,
-        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,  # Total batch operations across all workers
+        "throughput_rows_per_s": (workers * batches * batch_size) / runtime if runtime > 0 else 0,  # Total rows processed per second
         "num_workers": len(results),
     }
 
@@ -330,7 +330,7 @@ def run_ray_core_task_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": np.mean(worker_rss) if worker_rss else 0,
         "avg_uss_per_worker_mb": np.mean(worker_uss) if worker_uss else 0,
         "runtime_s": runtime,
-        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,  # Total batch operations across all workers
+        "throughput_rows_per_s": (workers * batches * batch_size) / runtime if runtime > 0 else 0,  # Total rows processed per second
         "num_workers": len(results),
     }
 
@@ -376,7 +376,7 @@ def run_ray_core_actor_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": np.mean(worker_rss) if worker_rss else 0,
         "avg_uss_per_worker_mb": np.mean(worker_uss) if worker_uss else 0,
         "runtime_s": runtime,
-        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,  # Total batch operations across all workers
+        "throughput_rows_per_s": (workers * batches * batch_size) / runtime if runtime > 0 else 0,  # Total rows processed per second
         "num_workers": len(results),
     }
 
@@ -455,7 +455,7 @@ def run_ray_data_normal(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": avg_rss,
         "avg_uss_per_worker_mb": avg_uss,
         "runtime_s": runtime,
-        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,  # Total batches from dataset
+        "throughput_rows_per_s": (batches * batch_size) / runtime if runtime > 0 else 0,  # Total rows processed per second
         "num_workers": num_workers,
     }
 
@@ -546,7 +546,7 @@ def run_ray_data_task_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": avg_rss,
         "avg_uss_per_worker_mb": avg_uss,
         "runtime_s": runtime,
-        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,  # Total batches from dataset
+        "throughput_rows_per_s": (batches * batch_size) / runtime if runtime > 0 else 0,  # Total rows processed per second
         "num_workers": num_workers,
     }
 
@@ -634,7 +634,7 @@ def run_ray_data_actor_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": avg_rss,
         "avg_uss_per_worker_mb": avg_uss,
         "runtime_s": runtime,
-        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,  # Total batches from dataset
+        "throughput_rows_per_s": (batches * batch_size) / runtime if runtime > 0 else 0,  # Total rows processed per second
         "num_workers": num_workers,
     }
 
@@ -658,8 +658,9 @@ def print_comparison_table(results: Dict[str, Dict[str, Any]], model_size_mb: fl
     }
 
     # Print header
-    print(f"\n{'Approach':<20} {'RSS (MB)':>12} {'USS (MB)':>12} {'Runtime (s)':>12} {'Throughput':>12}")
-    print("-" * 80)
+    print(f"\n{'Approach':<20} {'RSS (MB)':>12} {'USS (MB)':>12} {'Runtime (s)':>12} {'Throughput':>15}")
+    print("-" * 85)
+    print(f"{'':<20} {'':>12} {'':>12} {'':>12} {'(rows/sec)':>15}")
 
     # Print results for each approach
     for approach in approaches:
@@ -668,7 +669,7 @@ def print_comparison_table(results: Dict[str, Dict[str, Any]], model_size_mb: fl
             name = approach_names[approach]
             print(
                 f"{name:<20} {r['peak_total_rss_mb']:>12.1f} {r['peak_total_uss_mb']:>12.1f} "
-                f"{r['runtime_s']:>12.2f} {r['throughput_batches_per_s']:>12.2f}"
+                f"{r['runtime_s']:>12.2f} {r['throughput_rows_per_s']:>15.2f}"
             )
 
     # Calculate savings
