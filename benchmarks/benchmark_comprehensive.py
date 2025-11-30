@@ -285,7 +285,7 @@ def run_ray_core_normal(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": np.mean(worker_rss) if worker_rss else 0,
         "avg_uss_per_worker_mb": np.mean(worker_uss) if worker_uss else 0,
         "runtime_s": runtime,
-        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,
+        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,  # Total batch operations across all workers
         "num_workers": len(results),
     }
 
@@ -330,7 +330,7 @@ def run_ray_core_task_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": np.mean(worker_rss) if worker_rss else 0,
         "avg_uss_per_worker_mb": np.mean(worker_uss) if worker_uss else 0,
         "runtime_s": runtime,
-        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,
+        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,  # Total batch operations across all workers
         "num_workers": len(results),
     }
 
@@ -376,7 +376,7 @@ def run_ray_core_actor_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": np.mean(worker_rss) if worker_rss else 0,
         "avg_uss_per_worker_mb": np.mean(worker_uss) if worker_uss else 0,
         "runtime_s": runtime,
-        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,
+        "throughput_batches_per_s": (workers * batches) / runtime if runtime > 0 else 0,  # Total batch operations across all workers
         "num_workers": len(results),
     }
 
@@ -455,7 +455,7 @@ def run_ray_data_normal(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": avg_rss,
         "avg_uss_per_worker_mb": avg_uss,
         "runtime_s": runtime,
-        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,
+        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,  # Total batches from dataset
         "num_workers": num_workers,
     }
 
@@ -546,7 +546,7 @@ def run_ray_data_task_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": avg_rss,
         "avg_uss_per_worker_mb": avg_uss,
         "runtime_s": runtime,
-        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,
+        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,  # Total batches from dataset
         "num_workers": num_workers,
     }
 
@@ -634,7 +634,7 @@ def run_ray_data_actor_based(model, workers, batches, batch_size, duration):
         "avg_rss_per_worker_mb": avg_rss,
         "avg_uss_per_worker_mb": avg_uss,
         "runtime_s": runtime,
-        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,
+        "throughput_batches_per_s": batches / runtime if runtime > 0 else 0,  # Total batches from dataset
         "num_workers": num_workers,
     }
 
