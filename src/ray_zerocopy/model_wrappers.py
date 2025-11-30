@@ -345,21 +345,6 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             else:
                 return pipeline
 
-    def to_pipeline(self, _use_fast_load: bool = False) -> torch.nn.Module | T:
-        """Deprecated: Use load() instead.
-
-        This method is deprecated and will be removed in a future version.
-        Use load() instead.
-        """
-        import warnings
-
-        warnings.warn(
-            "to_pipeline() is deprecated. Use load() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.load(_use_fast_load=_use_fast_load)
-
     def __getstate__(self):
         """Return state for pickling."""
         return {

@@ -361,8 +361,7 @@ def test_wrapper_api_consistency():
     jit_task_wrapper = JITTaskWrapper(jit_pipeline)
     jit_actor_wrapper = JITActorWrapper(jit_pipeline)
 
-    # Actor wrappers should have to_pipeline() or load() method
-    assert hasattr(actor_wrapper, "to_pipeline")
+    # Actor wrappers should have load() method
     assert hasattr(jit_actor_wrapper, "load")
 
     # Task rewritten should be callable
