@@ -1,38 +1,38 @@
 {
   "execution_mode": "ray_core",
   "config": {
-    "workers": 2,
-    "batches": 5,
+    "workers": 4,
+    "batches": 10,
     "batch_size": 32,
-    "duration": 5
+    "duration": 10
   },
   "approaches": {
     "normal": {
-      "peak_total_rss_mb": 5109.1015625,
-      "peak_total_uss_mb": 2825.71484375,
-      "avg_rss_per_worker_mb": 1539.708984375,
-      "avg_uss_per_worker_mb": 772.66796875,
-      "runtime_s": 6.737137079238892,
-      "throughput_batches_per_s": 1.4843100091900936,
-      "num_workers": 2
+      "peak_total_rss_mb": 7916.4765625,
+      "peak_total_uss_mb": 4173.79296875,
+      "avg_rss_per_worker_mb": 1537.8564453125,
+      "avg_uss_per_worker_mb": 770.177734375,
+      "runtime_s": 13.122655153274536,
+      "throughput_batches_per_s": 3.04816361725536,
+      "num_workers": 4
     },
     "task_based": {
-      "peak_total_rss_mb": 3897.234375,
-      "peak_total_uss_mb": 1539.73828125,
-      "avg_rss_per_worker_mb": 1065.40625,
-      "avg_uss_per_worker_mb": 293.845703125,
-      "runtime_s": 5.864126682281494,
-      "throughput_batches_per_s": 1.7052837603619786,
-      "num_workers": 2
+      "peak_total_rss_mb": 6054.390625,
+      "peak_total_uss_mb": 2165.59765625,
+      "avg_rss_per_worker_mb": 1070.3291015625,
+      "avg_uss_per_worker_mb": 296.4765625,
+      "runtime_s": 11.474958181381226,
+      "throughput_batches_per_s": 3.4858514835289145,
+      "num_workers": 4
     },
     "actor_based": {
-      "peak_total_rss_mb": 1769.671875,
-      "peak_total_uss_mb": 952.76953125,
-      "avg_rss_per_worker_mb": 576.712890625,
-      "avg_uss_per_worker_mb": 287.427734375,
-      "runtime_s": 5.924193382263184,
-      "throughput_batches_per_s": 1.6879935131657975,
-      "num_workers": 2
+      "peak_total_rss_mb": 1774.58984375,
+      "peak_total_uss_mb": 958.30859375,
+      "avg_rss_per_worker_mb": 576.2294921875,
+      "avg_uss_per_worker_mb": 287.47265625,
+      "runtime_s": 11.17136263847351,
+      "throughput_batches_per_s": 3.5805837921904327,
+      "num_workers": 4
     }
   }
 }

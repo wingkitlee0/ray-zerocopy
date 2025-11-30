@@ -753,8 +753,13 @@ def main():
     if not ray.is_initialized():
         try:
             ray.init(ignore_reinit_error=True)
-        except:
-            ray.init(object_store_memory=4 * 1024 * 1024 * 1024)
+        except Exception as e:
+            print(f"Warning: Ray init failed with {e}, trying with explicit object store memory...")
+            try:
+                ray.init(object_store_memory=4 * 1024 * 1024 * 1024, ignore_reinit_error=True)
+            except Exception as e2:
+                print(f"Error: Failed to initialize Ray: {e2}")
+                raise
 
     # Create model
     print("\nCreating large model (~500MB)...")
@@ -820,8 +825,12 @@ def main():
         raise
 
     finally:
-        # Cleanup
-        ray.shutdown()
+        # Cleanup - only shutdown if we initialized Ray
+        try:
+            if ray.is_initialized():
+                ray.shutdown()
+        except Exception as e:
+            print(f"Warning: Error during Ray shutdown: {e}")
 
 
 if __name__ == "__main__":
