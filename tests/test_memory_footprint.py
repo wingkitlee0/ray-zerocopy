@@ -11,7 +11,7 @@ import psutil
 import ray
 import torch
 
-from ray_zerocopy import TaskWrapper
+from ray_zerocopy import ModelWrapper
 from ray_zerocopy._internal.zerocopy import extract_tensors
 
 
@@ -146,7 +146,7 @@ def test_memory_footprint_multiple_workers(ray_cluster):
             self.model = model
 
     pipeline = Pipeline(model)
-    wrapped_pipeline = TaskWrapper(pipeline)
+    wrapped_pipeline = ModelWrapper.for_tasks(pipeline)
 
     @ray.remote
     def worker_task_zerocopy(wrapped_pipeline, input_data):
@@ -216,7 +216,7 @@ def test_memory_footprint_sequential_calls(ray_cluster):
             self.model = model
 
     pipeline = Pipeline(model)
-    wrapped_pipeline = TaskWrapper(pipeline)
+    wrapped_pipeline = ModelWrapper.for_tasks(pipeline)
 
     x = torch.randn(5, 5000)
     num_calls = 5

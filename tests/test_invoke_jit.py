@@ -336,3 +336,94 @@ def test_zero_copy_memory_efficiency(ray_cluster, large_jit_model):
     # All tasks should complete successfully
     assert len(results) == num_tasks
     assert all(r.shape == (1, 100) for r in results)
+
+
+def test_call_jit_model_with_forward_method(ray_cluster, simple_jit_model):
+    """Test call_model with forward method name."""
+    model = simple_jit_model
+    model_data = extract_tensors(model)
+    model_ref = ray.put(model_data)
+
+    x = torch.randn(3, 100)
+
+    # Call with forward method
+    result_ref = call_model.remote(model_ref, args=(x,), method_name="forward")
+    result = ray.get(result_ref)
+
+    assert result.shape == (3, 10)
+
+
+def test_jit_remote_model_shim_not_callable(ray_cluster, simple_jit_model):
+    """Test _RemoteModelShim raises TypeError when __call__ not in allowed_methods."""
+    import ray
+
+    from ray_zerocopy.jit.tasks import _RemoteModelShim
+
+    model_data = extract_tensors(simple_jit_model)
+    model_ref = ray.put(model_data)
+
+    # Create shim without __call__ in allowed_methods
+    shim = _RemoteModelShim(model_ref, {"forward"})
+
+    # Should raise TypeError when called
+    x = torch.randn(3, 100)
+    with pytest.raises(TypeError, match="not callable"):
+        shim(x)
+
+
+def test_jit_remote_model_shim_private_attributes(ray_cluster, simple_jit_model):
+    """Test _RemoteModelShim raises AttributeError for private attributes."""
+    import ray
+
+    from ray_zerocopy.jit.tasks import _RemoteModelShim
+
+    model_data = extract_tensors(simple_jit_model)
+    model_ref = ray.put(model_data)
+
+    shim = _RemoteModelShim(model_ref, {"__call__"})
+
+    # Private attributes should raise AttributeError
+    with pytest.raises(AttributeError):
+        _ = shim._private_attr
+
+    # Non-allowed methods should raise AttributeError
+    with pytest.raises(AttributeError):
+        _ = shim.nonexistent_method
+
+
+def test_jit_remote_model_shim_pickling(ray_cluster, simple_jit_model):
+    """Test _RemoteModelShim pickling."""
+    import pickle
+
+    import ray
+
+    from ray_zerocopy.jit.tasks import _RemoteModelShim
+
+    model_data = extract_tensors(simple_jit_model)
+    model_ref = ray.put(model_data)
+
+    shim = _RemoteModelShim(model_ref, {"__call__"})
+
+    # Test pickling
+    pickled = pickle.dumps(shim)
+    unpickled = pickle.loads(pickled)
+
+    # Test that unpickled shim still works
+    x = torch.randn(3, 100)
+    result = unpickled(x)
+    assert result.shape == (3, 10)
+
+
+def test_call_jit_model_with_none_kwargs(ray_cluster, simple_jit_model):
+    """Test call_model with kwargs=None (should default to empty dict)."""
+    model = simple_jit_model
+    model_data = extract_tensors(model)
+    model_ref = ray.put(model_data)
+
+    x = torch.randn(3, 100)
+
+    # Call with kwargs=None
+    result_ref = call_model.remote(model_ref, args=(x,), kwargs=None)
+    result = ray.get(result_ref)
+
+    assert result.shape == (3, 10)

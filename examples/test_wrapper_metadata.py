@@ -7,7 +7,7 @@ import inspect
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import ActorWrapper, JITActorWrapper, JITTaskWrapper, TaskWrapper
+from ray_zerocopy import JITActorWrapper, JITTaskWrapper, ModelWrapper
 
 
 class MyPipeline:
@@ -42,13 +42,13 @@ class MyPipeline:
 
 
 def test_task_wrapper_metadata():
-    """Test that TaskWrapper preserves metadata."""
+    """Test that ModelWrapper task mode preserves metadata."""
     print("=" * 70)
-    print("Testing TaskWrapper metadata preservation")
+    print("Testing ModelWrapper task mode metadata preservation")
     print("=" * 70)
 
     pipeline = MyPipeline()
-    wrapped = TaskWrapper(pipeline)
+    wrapped = ModelWrapper.for_tasks(pipeline)
 
     # Test __wrapped__ attribute (Python convention)
     assert hasattr(wrapped, "__wrapped__"), "Should have __wrapped__ attribute"
@@ -87,13 +87,13 @@ def test_task_wrapper_metadata():
 
 
 def test_actor_wrapper_metadata():
-    """Test that ActorWrapper preserves metadata."""
+    """Test that ModelWrapper actor mode preserves metadata."""
     print("\n" + "=" * 70)
-    print("Testing ActorWrapper metadata preservation")
+    print("Testing ModelWrapper actor mode metadata preservation")
     print("=" * 70)
 
     pipeline = MyPipeline()
-    wrapped = ActorWrapper(pipeline)
+    wrapped = ModelWrapper.from_model(pipeline, mode="actor")
 
     # Test __wrapped__ attribute
     assert hasattr(wrapped, "__wrapped__"), "Should have __wrapped__ attribute"
@@ -101,7 +101,7 @@ def test_actor_wrapper_metadata():
     print("✓ __wrapped__ attribute present and correct")
 
     # Test docstring preservation
-    print("\nWrapped ActorWrapper docstring (first 200 chars):")
+    print("\nWrapped ModelWrapper docstring (first 200 chars):")
     print(wrapped.__doc__[:200] + "...")
 
     assert pipeline.__class__.__doc__ in wrapped.__doc__, (
@@ -109,7 +109,7 @@ def test_actor_wrapper_metadata():
     )
     print("✓ Original pipeline docstring included in wrapper's docstring")
 
-    print("\n✓ ActorWrapper metadata preservation working!")
+    print("\n✓ ModelWrapper actor mode metadata preservation working!")
 
 
 def test_jit_task_wrapper_metadata():

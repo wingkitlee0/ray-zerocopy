@@ -14,7 +14,7 @@ import ray
 import torch
 import torch.nn as nn
 from ray.data import ActorPoolStrategy
-from ray_zerocopy import ActorWrapper
+from ray_zerocopy import ModelWrapper
 
 # Step 1: Define a PyTorch model
 class SimpleClassifier(nn.Module):
@@ -36,13 +36,13 @@ model = SimpleClassifier(input_dim=128, hidden_dim=256, output_dim=10)
 model.eval()
 
 # Wrap for zero-copy sharing
-actor_wrapper = ActorWrapper(model, device="cpu")
+model_wrapper = ModelWrapper.from_model(model, mode="actor")
 
 # Step 3: Define the inference actor
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        # Load model once per actor (zero-copy)
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        # Load model once per actor (zero-copy, on CPU)
+        self.model = model_wrapper.load()
         self.model.eval()
 
     def __call__(self, batch):
@@ -67,7 +67,7 @@ ds = ray.data.range(1000).map_batches(
 # Step 5: Run inference with 4 actors
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),  # 4 actors share the model
 )
@@ -104,19 +104,19 @@ Nothing special here - just a regular PyTorch model.
 
 ### Step 2: Wrap the Model
 
-Create an `ActorWrapper` to enable zero-copy sharing:
+Create a `ModelWrapper` to enable zero-copy sharing:
 
 ```python
 model = SimpleClassifier()
 model.eval()  # Set to eval mode
 
-actor_wrapper = ActorWrapper(model, device="cpu")
+model_wrapper = ModelWrapper.from_model(model, mode="actor")
 ```
 
 The wrapper:
 - Stores model weights in Ray's object store
 - Prepares for zero-copy loading across actors
-- Specifies target device ("cpu" or "cuda:0")
+- Models are loaded on CPU; users handle device placement themselves
 
 ### Step 3: Define the Inference Actor
 
@@ -124,9 +124,9 @@ The actor loads the model and runs inference:
 
 ```python
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        # Load model (zero-copy from object store)
-        self.model = actor_wrapper.load()
+    def __init__(self, model_wrapper):
+        # Load model (zero-copy from object store, on CPU)
+        self.model = model_wrapper.load()
         self.model.eval()
 
     def __call__(self, batch):
@@ -169,7 +169,7 @@ Use `map_batches` with `ActorPoolStrategy`:
 ```python
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"model_wrapper": model_wrapper},
     batch_size=32,
     compute=ActorPoolStrategy(size=4),
 )
@@ -211,39 +211,8 @@ results.write_parquet("s3://my-bucket/results/")
 
 **75% memory reduction!**
 
-## GPU Inference
-
-To use GPU, just change the device:
-
-```python
-# Wrap for GPU
-actor_wrapper = ActorWrapper(model, device="cuda:0")
-
-# Request GPU in map_batches
-results = ds.map_batches(
-    InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
-    batch_size=32,
-    compute=ActorPoolStrategy(size=1),  # 1 actor per GPU
-    num_gpus=1  # Request 1 GPU
-)
-```
-
-And move inputs to GPU in the actor:
-
-```python
-def __call__(self, batch):
-    inputs = torch.tensor(batch["data"], dtype=torch.float32)
-    inputs = inputs.to("cuda:0")  # Move to GPU
-
-    with torch.no_grad():
-        outputs = self.model(inputs)
-
-    return {"predictions": outputs.cpu().numpy()}  # Move back to CPU
-```
-
 ## Next Steps
 
 - Try the [Pipeline Tutorial](pipeline_example.md) for multi-model inference
 - Learn about [Ray Data Integration](../user_guide/ray_data_integration.md)
-- Explore the [ActorWrapper API](../api_reference/wrappers.md)
+- Explore the [ModelWrapper API](../api_reference/model_wrappers.md)

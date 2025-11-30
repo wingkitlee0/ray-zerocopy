@@ -1,7 +1,7 @@
+import copy
 from typing import Optional, Set, TypeVar
 
 import ray
-import copy
 
 from ray_zerocopy._internal.zerocopy import _RemoteModelShim
 from ray_zerocopy.nn.rewrite import prepare_pipeline

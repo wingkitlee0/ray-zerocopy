@@ -76,9 +76,7 @@ def prepare_jit_model_for_actors(jit_model: torch.jit.ScriptModule) -> ray.Objec
     return ray.put(extract_tensors(jit_model))
 
 
-def load_jit_model_in_actor(
-    model_ref: ray.ObjectRef, device: Optional[str] = None
-) -> torch.jit.ScriptModule:
+def load_jit_model_in_actor(model_ref: ray.ObjectRef) -> torch.jit.ScriptModule:
     """
     Load a TorchScript model inside a Ray actor from the object store using zero-copy.
 
@@ -88,8 +86,6 @@ def load_jit_model_in_actor(
 
     Args:
         model_ref: ObjectRef from prepare_jit_model_for_actors()
-        device: Device to move the model to (e.g., "cuda:0", "cpu").
-               If None, model stays on CPU
 
     Returns:
         Reconstructed TorchScript model ready for inference
@@ -97,7 +93,7 @@ def load_jit_model_in_actor(
     Example:
         >>> # Inside an actor's __init__
         >>> def __init__(self, model_ref):
-        ...     self.model = load_jit_model_in_actor(model_ref, device="cuda:0")
+        ...     self.model = load_jit_model_in_actor(model_ref)
     """
     # Suppress PyTorch warnings about immutable tensors
     warnings.filterwarnings("ignore", message="The given NumPy array is not writable")
@@ -107,10 +103,6 @@ def load_jit_model_in_actor(
 
     # Reconstruct the model
     model = replace_tensors(model_bytes, model_weights)
-
-    # Move to specified device if needed
-    if device is not None:
-        model = model.to(device)
 
     # Ensure model is in eval mode
     model.eval()
@@ -207,7 +199,6 @@ def prepare_pipeline_for_actors(
 def load_pipeline_for_actors(
     pipeline_skeleton: T,
     model_refs: dict[str, ray.ObjectRef],
-    device: Optional[str] = None,
 ) -> T:
     """
     Reconstruct a pipeline with TorchScript models inside a Ray actor.
@@ -218,7 +209,6 @@ def load_pipeline_for_actors(
     Args:
         pipeline_skeleton: Pipeline skeleton from prepare_pipeline_for_actors()
         model_refs: Model references dict from prepare_pipeline_for_actors()
-        device: Device to load models on (e.g., "cuda:0")
 
     Returns:
         Pipeline object with TorchScript models loaded and ready for inference
@@ -229,7 +219,6 @@ def load_pipeline_for_actors(
         ...     self.pipeline = load_pipeline_for_actors(
         ...         pipeline_skeleton,
         ...         model_refs,
-        ...         device="cuda:0"
         ...     )
     """
     # Create a copy of the skeleton
@@ -237,7 +226,7 @@ def load_pipeline_for_actors(
 
     # Load each TorchScript model from the object store
     for attr_name, model_ref in model_refs.items():
-        model = load_jit_model_in_actor(model_ref, device=device)
+        model = load_jit_model_in_actor(model_ref)
         setattr(pipeline, attr_name, model)
 
     return pipeline

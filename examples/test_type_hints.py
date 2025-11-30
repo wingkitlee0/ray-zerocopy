@@ -2,13 +2,13 @@
 Test script to demonstrate type hint preservation in wrappers.
 
 This file shows how type checkers (like Pylance, mypy) can now infer
-the correct types when using TaskWrapper and other wrappers.
+the correct types when using ModelWrapper and other wrappers.
 """
 
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import ActorWrapper, TaskWrapper
+from ray_zerocopy import ModelWrapper
 
 
 class Pipeline:
@@ -44,13 +44,13 @@ def test_type_hints():
 
     # Create pipeline and wrapper
     pipeline = Pipeline()
-    wrapped = TaskWrapper(pipeline)
+    wrapped = ModelWrapper.for_tasks(pipeline)
 
-    # The type of wrapped should be TaskWrapper[Pipeline]
+    # The type of wrapped should be ModelWrapper[Pipeline]
     # This allows IDEs to understand that wrapped has Pipeline's methods
 
     print("\n1. Type of wrapped object:")
-    print("   Type: TaskWrapper[Pipeline]")
+    print("   Type: ModelWrapper[Pipeline]")
     print(f"   __wrapped__ type: {type(wrapped.__wrapped__).__name__}")
 
     print("\n2. Access to __wrapped__ is properly typed:")

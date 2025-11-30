@@ -8,6 +8,7 @@ multiple models. This is useful for more complex inference workflows like:
 - Feature extraction + classification pipelines
 """
 
+import numpy as np
 import ray
 import torch
 import torch.nn as nn
@@ -93,7 +94,7 @@ class PipelineInferenceActor:
             model_wrapper: ModelWrapper containing the serialized pipeline
         """
         # Unwrap the pipeline (zero-copy loading of both encoder and decoder)
-        self.pipeline = model_wrapper.unwrap(device="cpu")
+        self.pipeline = model_wrapper.load()
         self.pipeline.set_eval()
 
         print("Actor initialized with pipeline:")
@@ -103,7 +104,7 @@ class PipelineInferenceActor:
     def __call__(self, batch: dict) -> dict:
         """Run inference through the full pipeline."""
         with torch.no_grad():
-            inputs = torch.tensor(batch["data"], dtype=torch.float32)
+            inputs = torch.tensor(np.vstack(batch["data"]), dtype=torch.float32)
             outputs = self.pipeline(inputs)
             return {"predictions": outputs.numpy()}
 

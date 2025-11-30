@@ -1,16 +1,15 @@
 # ModelWrapper
 
-Alternative API with explicit serialization/deserialization methods.
+Primary API for zero-copy model sharing with nn.Module models.
 
 ## Overview
 
-`ModelWrapper` provides a more explicit API for wrapping models:
+`ModelWrapper` provides a unified API for wrapping models that supports both task and actor execution modes:
 
 - `from_model()` - Create wrapper from model/pipeline
-- `unwrap()` - Deserialize model in actor
-- `to_actor()` - Get serialized form for actor
-
-This API is more verbose but gives you more control over the serialization process.
+- `for_tasks()` - Convenience method for task mode
+- `load()` - Load model in actor
+- Supports both task and actor execution modes
 
 ## ModelWrapper Class
 
@@ -30,7 +29,7 @@ This API is more verbose but gives you more control over the serialization proce
 from ray_zerocopy import ModelWrapper
 
 model = MyModel()
-wrapper = ModelWrapper.from_model(model)
+wrapper = ModelWrapper.from_model(model)  # "actor" mode by default
 ```
 
 ### Using in Actors
@@ -38,8 +37,8 @@ wrapper = ModelWrapper.from_model(model)
 ```python
 class InferenceActor:
     def __init__(self, model_wrapper):
-        # Unwrap to get the model
-        self.model = model_wrapper.unwrap(device="cuda:0")
+        # Load pipeline with zero-copy
+        self.model = model_wrapper.load()
 
     def __call__(self, batch):
         return self.model(batch["data"])
@@ -51,25 +50,14 @@ ds.map_batches(
 )
 ```
 
-### Alternative: Explicit Actor Preparation
+### Using for Tasks
 
 ```python
-# Get serialized form
-actor_config = wrapper.to_actor()
+# Create wrapper for task mode
+wrapped = ModelWrapper.for_tasks(pipeline)
 
-class InferenceActor:
-    def __init__(self, actor_config):
-        # Recreate wrapper from config
-        wrapper = ModelWrapper.from_actor(**actor_config)
-        self.model = wrapper.unwrap(device="cuda:0")
-
-    def __call__(self, batch):
-        return self.model(batch["data"])
-
-ds.map_batches(
-    InferenceActor,
-    fn_constructor_kwargs={"actor_config": actor_config}
-)
+# Use immediately - each call spawns a Ray task
+result = wrapped(data)
 ```
 
 ## Methods
@@ -79,54 +67,47 @@ ds.map_batches(
 Class method to create wrapper from model or pipeline.
 
 ```python
-wrapper = ModelWrapper.from_model(model)
+# Actor mode (default)
+wrapper = ModelWrapper.from_model(model, mode="actor")
+
+# Task mode
+wrapper = ModelWrapper.from_model(model, mode="task")
 ```
 
 **Parameters:**
 - `model` - PyTorch model (`nn.Module`) or pipeline (object with nn.Module attributes)
+- `mode` - Execution mode: "actor" (default) or "task"
 
 **Returns:**
 - `ModelWrapper` instance
 
-### unwrap
+### for_tasks
 
-Deserialize and load the model.
+Convenience method for task mode.
 
 ```python
-model = wrapper.unwrap(device="cuda:0")
+wrapped = ModelWrapper.for_tasks(pipeline)
 ```
 
 **Parameters:**
-- `device` (optional) - Target device ("cpu", "cuda:0", etc.)
-- `use_fast_load` (optional) - Enable fast loading (experimental)
+- `pipeline` - PyTorch model or pipeline
 
 **Returns:**
-- Loaded model or pipeline
+- A converted model or pipeline
 
-### to_actor
+### load
 
-Get serialized form for passing to actors.
-
-```python
-actor_config = wrapper.to_actor()
-```
-
-**Returns:**
-- Dictionary with serialization data
-
-### from_actor
-
-Class method to recreate wrapper from actor config.
+Load the model/pipeline (actor mode only).
 
 ```python
-wrapper = ModelWrapper.from_actor(**actor_config)
+model = wrapper.load()
 ```
 
 **Parameters:**
-- `**actor_config` - Unpacked config dictionary from `to_actor()`
+- `_use_fast_load` (optional) - Enable fast loading (experimental)
 
 **Returns:**
-- `ModelWrapper` instance
+- Loaded model or pipeline (on CPU). Users should handle device placement themselves.
 
 ## Supported Model Types
 
@@ -154,25 +135,15 @@ wrapper = ModelWrapper.from_model(pipeline)
 
 The wrapper automatically detects all `nn.Module` attributes.
 
-## Comparison with Primary API
+## Execution Modes
 
-### ModelWrapper (Alternative API)
+### Actor Mode
 
-```python
-# Wrap
-wrapper = ModelWrapper.from_model(model)
-
-# Use in actor
-class Actor:
-    def __init__(self, wrapper):
-        self.model = wrapper.unwrap(device="cuda:0")
-```
-
-### ActorWrapper (Primary API)
+For Ray Data and long-running actors:
 
 ```python
-# Wrap
-wrapper = ActorWrapper(model, device="cuda:0")
+# Create wrapper in actor mode
+wrapper = ModelWrapper.from_model(pipeline, mode="actor")
 
 # Use in actor
 class Actor:
@@ -180,37 +151,26 @@ class Actor:
         self.model = wrapper.load()
 ```
 
-**Differences:**
-- `ModelWrapper` has explicit `from_model()` and `unwrap()`
-- `ActorWrapper` has simpler `__init__()` and `load()`
-- Both achieve the same zero-copy sharing
+### Task Mode
 
-**Recommendation:** Use `ActorWrapper` unless you need the explicit control of `ModelWrapper`.
-
-## Advanced Usage
-
-### Custom Device Selection
-
-You can override the device when unwrapping:
+For ad-hoc inference with Ray tasks:
 
 ```python
-wrapper = ModelWrapper.from_model(model)
+# Create wrapper in task mode
+wrapped = ModelWrapper.for_tasks(pipeline)
 
-class Actor:
-    def __init__(self, wrapper, gpu_id):
-        # Different actors can use different GPUs
-        self.model = wrapper.unwrap(device=f"cuda:{gpu_id}")
+# Use immediately
+result = wrapped(data)  # Each call spawns a Ray task
 ```
+
+## Advanced Usage
 
 ### Conditional Fast Loading
 
 ```python
 class Actor:
     def __init__(self, wrapper, use_fast):
-        self.model = wrapper.unwrap(
-            device="cuda:0",
-            use_fast_load=use_fast
-        )
+        self.model = wrapper.load(_use_fast_load=use_fast)
 ```
 
 ### Inspecting Wrapper State
@@ -222,11 +182,11 @@ wrapper = ModelWrapper.from_model(pipeline)
 print(wrapper._is_standalone_module)
 
 # See detected models
-print(wrapper._model_refs.keys())
+print(wrapper._model_info.keys())
 ```
 
 ## See Also
 
-- [ActorWrapper](wrappers.md#actorwrapper) - Simpler alternative
-- [User Guide: ActorWrapper](../user_guide/actors.md)
+- [User Guide: Core Concepts](../user_guide/core_concepts.md)
+- [User Guide: Ray Data Integration](../user_guide/ray_data_integration.md)
 - [Tutorials](../tutorials/index.md)

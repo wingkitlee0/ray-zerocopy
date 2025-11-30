@@ -7,7 +7,6 @@ import psutil
 import ray
 import torch
 
-from ray_zerocopy import TaskWrapper
 from ray_zerocopy.benchmark import monitor_memory_context
 
 

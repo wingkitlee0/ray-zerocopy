@@ -51,7 +51,7 @@ def example_simple_jit_actor():
 
     # Create and wrap pipeline for actors
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Define actor class
     class JITInferenceActor:
@@ -144,7 +144,7 @@ def example_jit_pipeline_actors():
 
     # Wrap for actors
     pipeline = EncoderDecoderPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Define actor class
     class PipelineActor:
@@ -211,7 +211,7 @@ def example_jit_with_processing():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cpu")
+    actor_wrapper = JITActorWrapper(pipeline)
 
     # Actor with pre/post processing
     class ProcessingActor:
@@ -252,83 +252,6 @@ def example_jit_with_processing():
     print("✓ JIT models support full pre/post processing pipelines!")
 
 
-# Example 4: GPU-based JIT inference (if available)
-def example_jit_gpu():
-    """Example using GPU for JIT inference (if available)."""
-    print("\n" + "=" * 70)
-    print("Example 4: JIT GPU Inference")
-    print("=" * 70)
-
-    if not torch.cuda.is_available():
-        print("Skipping (no GPU available)")
-        return
-
-    # Create a larger model for GPU
-    class LargeModel(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.layers = nn.Sequential(
-                nn.Linear(100, 512),
-                nn.ReLU(),
-                nn.Linear(512, 512),
-                nn.ReLU(),
-                nn.Linear(512, 10),
-            )
-
-        def forward(self, x):
-            return self.layers(x)
-
-    # Trace the model
-    model = LargeModel()
-    model.eval()
-    example_input = torch.randn(1, 100)
-    jit_model = torch.jit.trace(model, example_input)
-
-    # Wrap in pipeline
-    class JITPipeline:
-        def __init__(self):
-            self.model = jit_model
-
-        def __call__(self, x):
-            return self.model(x)
-
-    pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline, device="cuda:0")
-
-    # GPU actor
-    class GPUJITActor:
-        def __init__(self, actor_wrapper):
-            # Load JIT pipeline directly onto GPU
-            self.pipeline = actor_wrapper.load()
-
-        def __call__(self, batch):
-            # Move data to GPU
-            inputs = torch.tensor(batch["data"], dtype=torch.float32, device="cuda:0")
-
-            with torch.no_grad():
-                outputs = self.pipeline(inputs)
-
-            # Move results back to CPU
-            return {"predictions": outputs.cpu().numpy()}
-
-    # Create dataset
-    ds = ray.data.range(1000).map_batches(
-        lambda batch: {"data": np.random.randn(len(batch["id"]), 100)}, batch_size=32
-    )
-
-    # Run with GPU actor
-    results = ds.map_batches(
-        GPUJITActor,
-        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
-        batch_size=32,
-        compute=ActorPoolStrategy(size=1),
-        num_gpus=1,
-    )
-
-    print(f"✓ Processed {results.count()} batches on GPU")
-    print("✓ TorchScript models work great with GPU actors!")
-
-
 def main():
     """Run all JIT actor examples."""
     print("\n" + "=" * 70)
@@ -346,7 +269,6 @@ def main():
         example_simple_jit_actor()
         example_jit_pipeline_actors()
         example_jit_with_processing()
-        example_jit_gpu()
 
         print("\n" + "=" * 70)
         print("✅ All JIT actor examples completed successfully!")
@@ -355,7 +277,6 @@ def main():
         print("- TorchScript models can now be used with Ray actors")
         print("- Zero-copy loading works the same as nn.Module")
         print("- JITActorWrapper provides the same clean API as ActorWrapper")
-        print("- Supports GPU inference just like regular models")
         print("=" * 70)
 
     finally:

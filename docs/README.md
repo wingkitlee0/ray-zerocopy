@@ -43,7 +43,6 @@ docs/
 │   ├── core_concepts.md
 │   ├── tasks.md
 │   ├── actors.md
-│   ├── torchscript.md
 │   └── ray_data_integration.md
 ├── tutorials/                  # Step-by-step tutorials
 │   ├── index.md

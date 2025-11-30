@@ -53,6 +53,38 @@ The `-s` flag shows print statements, which is useful for seeing memory statisti
 pytest tests/test_memory_footprint.py::test_memory_footprint_multiple_workers -v -s
 ```
 
+### Running Tests with Coverage
+
+Use the `coverage` package to measure test coverage:
+
+```bash
+# Run tests with coverage
+coverage run -m pytest tests/
+
+# Generate and view terminal coverage report
+coverage report
+
+# Generate HTML coverage report (interactive view)
+coverage html
+# Then open htmlcov/index.html in your browser
+
+# Generate XML coverage report (for CI tools like Codecov)
+coverage xml
+
+# Or run all reports at once
+coverage run -m pytest tests/
+coverage report
+coverage html
+coverage xml
+```
+
+Coverage reports are generated in:
+- **Terminal**: Summary with missing lines shown inline (`coverage report`)
+- **HTML**: Interactive report in `htmlcov/` directory (`coverage html`)
+- **XML**: Machine-readable report in `coverage.xml` (`coverage xml`)
+
+The coverage configuration is defined in `pyproject.toml` under `[tool.coverage.*]` sections.
+
 ## Key Tests for Zero-Copy Verification
 
 The most important tests are in `test_memory_footprint.py`:
