@@ -1,11 +1,12 @@
 """Common worker implementations for benchmarks.
 
-These workers can work with both ModelWrapper and JIT wrappers (JITTaskWrapper/JITActorWrapper).
+These workers can work with both ModelWrapper and JIT wrappers.
+The wrappers are used via duck typing - any object with the appropriate interface will work.
 """
 
 import gc
 import os
-from typing import Any, Callable, Union
+from typing import Any
 
 import psutil
 import ray
@@ -13,10 +14,9 @@ import torch
 
 from ray_zerocopy import ModelWrapper
 from .monitor import get_memory_mb, log_memory
-from ray_zerocopy.wrappers import JITActorWrapper, JITTaskWrapper
 
-# Type alias for wrapper types
-WrapperType = Union[ModelWrapper, JITTaskWrapper, JITActorWrapper]
+# Type alias for wrapper types - using Any to be generic
+WrapperType = Any
 
 
 @ray.remote
@@ -53,7 +53,7 @@ def normal_actor_worker(model_copy, batches, batch_size):
 
 @ray.remote
 def task_based_worker(wrapped_pipeline, batches, batch_size):
-    """Task-based worker using ModelWrapper.for_tasks() or JITTaskWrapper."""
+    """Task-based worker using ModelWrapper.for_tasks() or JIT wrappers."""
     pid = os.getpid()
     print(f"[Task-based] Worker {pid} started. Using zero-copy pipeline...")
 
@@ -81,7 +81,7 @@ def task_based_worker(wrapped_pipeline, batches, batch_size):
 
 @ray.remote
 class ActorBasedWorker:
-    """Actor-based worker using ModelWrapper.from_model(..., mode="actor") or JITActorWrapper."""
+    """Actor-based worker using ModelWrapper.from_model(..., mode="actor") or JIT wrappers."""
 
     def __init__(self, model_wrapper: WrapperType):
         self.pid = os.getpid()
@@ -144,7 +144,7 @@ class NormalActorRayData:
 
 
 def task_based_function(batch, wrapped_pipeline):
-    """Task-based function for Ray Data using ModelWrapper.for_tasks() or JITTaskWrapper."""
+    """Task-based function for Ray Data using ModelWrapper.for_tasks() or JIT wrappers."""
 
     # wrapped_pipeline handles zero-copy loading of the model
     # so we do not need to call ray.get on it directly.
@@ -169,7 +169,7 @@ def task_based_function(batch, wrapped_pipeline):
 
 
 class ActorBasedRayData:
-    """Actor-based worker for Ray Data using ModelWrapper.from_model(..., mode="actor") or JITActorWrapper."""
+    """Actor-based worker for Ray Data using ModelWrapper.from_model(..., mode="actor") or JIT wrappers."""
 
     def __init__(self, model_wrapper: WrapperType):
         self.pid = os.getpid()

@@ -20,10 +20,9 @@ from .workers import (
     task_based_function,
     task_based_worker,
 )
-from ray_zerocopy.wrappers import JITActorWrapper, JITTaskWrapper
 
-# Type alias for wrapper types
-WrapperType = Union[ModelWrapper, JITTaskWrapper, JITActorWrapper]
+# Type alias for wrapper types - using Any to be generic
+WrapperType = Any
 
 
 def run_ray_core_normal(model, workers, batches, batch_size):
@@ -110,7 +109,7 @@ def run_ray_core_actor_based(
         batches: Number of batches
         batch_size: Batch size
         create_wrapper: Function that takes a Pipeline and returns a wrapper
-                        (e.g., ModelWrapper.from_model(..., mode="actor") or JITActorWrapper)
+                        (e.g., ModelWrapper.from_model(..., mode="actor") or JIT wrappers)
     """
     print("\n" + "=" * 80)
     print("RAY CORE - ACTOR-BASED")
@@ -295,7 +294,7 @@ def run_ray_data_actor_based(
         batches: Number of batches
         batch_size: Batch size
         create_wrapper: Function that takes a Pipeline and returns a wrapper
-                        (e.g., ModelWrapper.from_model(..., mode="actor") or JITActorWrapper)
+                        (e.g., ModelWrapper.from_model(..., mode="actor") or JIT wrappers)
     """
     print("\n" + "=" * 80)
     print("RAY DATA - ACTOR-BASED")
