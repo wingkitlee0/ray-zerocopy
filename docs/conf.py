@@ -15,7 +15,14 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "ray-zerocopy"
 copyright = "2025, Kit Lee"
 author = "Kit Lee"
-release = "0.1.0"
+
+# Read version from package
+try:
+    from ray_zerocopy import __version__
+    release = __version__
+except ImportError:
+    # Fallback if package not installed
+    release = "0.1.0"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

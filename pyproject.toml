@@ -1,6 +1,6 @@
 [project]
 name = "ray-zerocopy"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Zero-copy model sharing for PyTorch inference in Ray"
 readme = "README.md"
 authors = [
@@ -16,7 +16,8 @@ dependencies = [
 
 [project.urls]
 Documentation = "https://ray-zerocopy.readthedocs.io"
-Source = "https://github.com/yourusername/ray-zerocopy"
+Source = "https://github.com/wingkitlee0/ray-zerocopy"
+Repository = "https://github.com/wingkitlee0/ray-zerocopy"
 
 [project.optional-dependencies]
 dev = [
@@ -35,8 +36,14 @@ docs = [
 ray-zerocopy = "ray_zerocopy:main"
 
 [build-system]
-requires = ["uv_build>=0.8.22,<0.9.0"]
-build-backend = "uv_build"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/ray_zerocopy/_version.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
