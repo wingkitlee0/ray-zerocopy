@@ -42,13 +42,14 @@ from ray_zerocopy.benchmark import (
 
 
 @ray.remote
-def normal_actor_worker(model_ref, batches, batch_size, sleep_time):
-    """Normal actor worker that loads model via ray.get (full copy)."""
+def normal_actor_worker(model_copy, batches, batch_size, sleep_time):
+    """Normal actor worker that loads model (Ray automatically deserializes ObjectRef)."""
     pid = os.getpid()
     print(f"[Normal Actor] Worker {pid} started. Loading model...")
 
-    # Load model (creates full copy)
-    model = ray.get(model_ref)
+    # Ray automatically deserializes ObjectRefs passed as arguments
+    # So model_copy is already the deserialized model (creates a copy per worker)
+    model = model_copy
 
     # Run inference on batches
     with torch.no_grad():
@@ -256,12 +257,15 @@ def run_ray_core_normal(model, workers, batches, batch_size, duration):
     print("RAY CORE - NORMAL ACTOR (Baseline)")
     print("=" * 80)
 
+    # Put model in object store - Ray will automatically deserialize it in workers
+    # This still creates a copy per worker (baseline behavior)
     model_ref = ray.put(model)
     sleep_time = max(0, duration - 1)  # Leave 1 second for processing
 
     with monitor_memory_context(interval=1.0) as memory_stats:
         start_time = time.time()
 
+        # Pass model_ref - Ray will deserialize it in each worker (creating copies)
         futures = [
             normal_actor_worker.remote(model_ref, batches, batch_size, sleep_time)
             for _ in range(workers)
