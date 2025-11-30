@@ -38,7 +38,7 @@ from typing import Any, Callable, Dict
 import ray
 import torch
 
-from ray_zerocopy import ModelWrapper
+from ray_zerocopy import ModelWrapper, JITModelWrapper
 from ray_zerocopy.benchmark import (
     create_large_model,
     estimate_model_size_mb,
@@ -51,7 +51,6 @@ from ray_zerocopy.benchmark import (
     run_ray_data_task_based,
     save_results_json,
 )
-from ray_zerocopy.wrappers import JITActorWrapper, JITTaskWrapper
 
 
 def create_wrapper_for_tasks(pipeline, use_jit: bool):
@@ -59,13 +58,13 @@ def create_wrapper_for_tasks(pipeline, use_jit: bool):
 
     Args:
         pipeline: Pipeline object with model
-        use_jit: If True, use JITTaskWrapper; otherwise use ModelWrapper.for_tasks()
+        use_jit: If True, use JITModelWrapper.for_tasks(); otherwise use ModelWrapper.for_tasks()
 
     Returns:
         Wrapped pipeline for task-based execution
     """
     if use_jit:
-        return JITTaskWrapper(pipeline)
+        return JITModelWrapper.for_tasks(pipeline)
     else:
         return ModelWrapper.for_tasks(pipeline)
 
@@ -75,13 +74,13 @@ def create_wrapper_for_actors(pipeline, use_jit: bool):
 
     Args:
         pipeline: Pipeline object with model
-        use_jit: If True, use JITActorWrapper; otherwise use ModelWrapper.from_model(..., mode="actor")
+        use_jit: If True, use JITModelWrapper.from_model(..., mode="actor"); otherwise use ModelWrapper.from_model(..., mode="actor")
 
     Returns:
         Wrapper for actor-based execution
     """
     if use_jit:
-        return JITActorWrapper(pipeline)
+        return JITModelWrapper.from_model(pipeline, mode="actor")
     else:
         return ModelWrapper.from_model(pipeline, mode="actor")
 
