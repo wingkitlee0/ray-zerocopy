@@ -48,6 +48,17 @@ class MultiModelPipeline:
         return self.decoder(encoded)
 
 
+class JITPipeline:
+    """Pipeline with a TorchScript model for testing."""
+
+    def __init__(self, jit_model):
+        self.model = jit_model
+        self.custom_attr = "test_value"
+
+    def __call__(self, x):
+        return self.model(x)
+
+
 # ============================================================================
 # ModelWrapper Task Mode Tests
 # ============================================================================
@@ -389,6 +400,65 @@ def test_wrapper_determinism():
     with torch.no_grad():
         actor_output = loaded(test_input)
     assert torch.allclose(original_output, actor_output, rtol=1e-4)
+
+
+def test_jit_task_wrapper_pickling():
+    """Test JITTaskWrapper pickling (__getstate__ and __setstate__)."""
+    import pickle
+
+    model = SimpleModel()
+    model.eval()
+    example_input = torch.randn(1, 10)
+    jit_model = torch.jit.trace(model, example_input)
+
+    pipeline = JITPipeline(jit_model)
+    wrapped = JITTaskWrapper(pipeline)
+
+    # Test pickling
+    pickled = pickle.dumps(wrapped)
+    unpickled = pickle.loads(pickled)
+
+    # Test that unpickled wrapper still works
+    test_input = torch.randn(3, 10)
+    result = unpickled(test_input)
+    assert result.shape == (3, 5)
+
+
+def test_jit_actor_wrapper_pickling():
+    """Test JITActorWrapper pickling (__getstate__ and __setstate__)."""
+    import pickle
+
+    model = SimpleModel()
+    model.eval()
+    example_input = torch.randn(1, 10)
+    jit_model = torch.jit.trace(model, example_input)
+
+    pipeline = JITPipeline(jit_model)
+    actor_wrapper = JITActorWrapper(pipeline)
+
+    # Test pickling
+    pickled = pickle.dumps(actor_wrapper)
+    unpickled = pickle.loads(pickled)
+
+    # Test that unpickled wrapper still works
+    loaded_pipeline = unpickled.load()
+    test_input = torch.randn(3, 10)
+    result = loaded_pipeline(test_input)
+    assert result.shape == (3, 5)
+
+
+def test_jit_task_wrapper_getattr():
+    """Test JITTaskWrapper __getattr__ forwarding."""
+    model = SimpleModel()
+    model.eval()
+    example_input = torch.randn(1, 10)
+    jit_model = torch.jit.trace(model, example_input)
+
+    pipeline = JITPipeline(jit_model)
+    wrapped = JITTaskWrapper(pipeline)
+
+    # Test that custom attributes are accessible
+    assert wrapped.custom_attr == "test_value"
 
 
 if __name__ == "__main__":

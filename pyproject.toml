@@ -21,6 +21,7 @@ Source = "https://github.com/yourusername/ray-zerocopy"
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "coverage>=7.0.0",
 ]
 docs = [
     "sphinx>=7.0",
@@ -41,3 +42,31 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-v"
+
+[tool.coverage.run]
+source = ["src/ray_zerocopy"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "if False:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.coverage.html]
+directory = "htmlcov"
