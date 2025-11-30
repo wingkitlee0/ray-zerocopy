@@ -1,5 +1,9 @@
 # ray-zerocopy
 
+[![PyPI version](https://badge.fury.io/py/ray-zerocopy.svg)](https://badge.fury.io/py/ray-zerocopy)
+[![Documentation Status](https://readthedocs.org/projects/ray-zerocopy/badge/?version=latest)](https://ray-zerocopy.readthedocs.io/en/latest/?badge=latest)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 **Zero-copy model sharing for PyTorch inference in Ray**
 
 This library enables efficient model sharing across Ray workers using zero-copy mechanisms, eliminating the need to duplicate large model weights in memory when performing inference.
@@ -108,7 +112,7 @@ pip install ray-zerocopy
 Or install from source:
 
 ```bash
-git clone https://github.com/yourusername/ray-zerocopy.git
+git clone https://github.com/wingkitlee0/ray-zerocopy.git
 cd ray-zerocopy
 pip install -e .
 ```
