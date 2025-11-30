@@ -1,0 +1,7 @@
+ray-zerocopy
+Copyright [2025] [Kit Lee]
+
+This project includes code derived from:
+  Zero-Copy Model Loading (https://github.com/project-codeflare/zero-copy-model-loading)
+  Copyright (c) 2021, 2022 IBM Corp.
+  Licensed under the Apache License, Version 2.0

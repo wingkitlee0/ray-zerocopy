@@ -37,21 +37,9 @@ jobs:
         # Set Ray to use limited resources in CI
         RAY_memory_monitor_refresh_ms: 0
 
-    - name: Generate coverage reports
+    - name: Generate and print coverage report
       run: |
         coverage report
-        coverage html
-        coverage xml
-
-    - name: Upload coverage reports
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: coverage-report-${{ matrix.python-version }}
-        path: |
-          htmlcov/
-          coverage.xml
-        retention-days: 30
 
     # Optional: Uncomment to upload to Codecov (requires codecov/codecov-action@v3)
     # - name: Upload coverage to Codecov

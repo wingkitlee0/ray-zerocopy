@@ -1,5 +1,6 @@
 """Memory monitoring utilities for benchmarking Ray workers."""
 
+import gc
 import os
 import threading
 import time
@@ -169,3 +170,40 @@ def monitor_memory_context(interval=1.0, show_parent=False):
         # Print USS availability note if needed
         if not memory_stats.get("uss_available", False):
             print(f"\n{USS_UNAVAILABLE_MESSAGE}")
+
+
+@contextmanager
+def log_memory(name: str):
+    """Context manager to log memory usage after model loading.
+
+    Args:
+        name: Name identifier for the log message
+
+    Yields:
+        A lambda function that returns a dict with "rss" and "uss" keys (in MB)
+
+    Example:
+        with log_memory("Worker 12345") as get_mem:
+            model = load_model()
+        mem = get_mem()  # Returns {"rss": rss_mb, "uss": uss_mb}
+        rss = mem["rss"]
+        uss = mem["uss"]
+    """
+    print(f"[{name}] Loading model...")
+    mem_container: dict[str, float | None] = {"rss": None, "uss": None}
+
+    def get_mem():
+        return mem_container
+
+    yield get_mem
+    gc.collect()
+    pid = os.getpid()
+    rss_mb = get_memory_mb(pid)
+    try:
+        process = psutil.Process(pid)
+        uss_mb = process.memory_full_info().uss / 1024 / 1024
+    except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
+        uss_mb = 0
+    mem_container["rss"] = rss_mb
+    mem_container["uss"] = uss_mb
+    print(f"[{name}] Ready. RSS: {rss_mb:.1f} MB, USS: {uss_mb:.1f} MB")

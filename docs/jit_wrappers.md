@@ -50,3 +50,4 @@ class InferenceActor:
 For production use, we recommend using `ModelWrapper` with standard `nn.Module` models, which is fully supported and stable.
 
 For JIT wrapper updates and availability, please check the project repository.
+

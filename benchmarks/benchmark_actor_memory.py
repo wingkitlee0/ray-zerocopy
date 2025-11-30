@@ -19,7 +19,6 @@ import argparse
 import gc
 import os
 import time
-from contextlib import contextmanager
 
 import numpy as np
 import psutil
@@ -32,17 +31,9 @@ from ray_zerocopy.benchmark import (
     create_large_model,
     estimate_model_size_mb,
     get_memory_mb,
+    log_memory,
     monitor_memory_context,
 )
-
-
-@contextmanager
-def log_memory(name: str):
-    print(f"[{name}] Loading model (full copy)...")
-    yield
-    gc.collect()
-    mem = get_memory_mb(os.getpid())
-    print(f"[{name}] Ready. Memory: {mem:.1f} MB")
 
 
 class NormalActor:
@@ -50,7 +41,7 @@ class NormalActor:
 
     def __init__(self, model_ref):
         self.pid = os.getpid()
-        with log_memory(f"Normal Actor {self.pid}"):
+        with log_memory(f"Normal Actor {self.pid}") as _:
             self.model = ray.get(model_ref)
 
     def __call__(self, batch):
