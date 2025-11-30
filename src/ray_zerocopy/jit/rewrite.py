@@ -26,6 +26,8 @@ from typing import Tuple
 
 import torch
 
+from ray_zerocopy._internal.zerocopy import _make_tensor_from_array
+
 
 def extract_tensors(
     m: torch.jit.ScriptModule,
@@ -71,17 +73,6 @@ def extract_tensors(
     return model_bytes, tensors_as_numpy
 
 
-def _make_tensor_from_array(array):
-    """
-    Create a PyTorch tensor from a NumPy array, avoiding copies if possible.
-    """
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", message="The given NumPy array is not writable"
-        )
-        return torch.as_tensor(array)
-
-
 def replace_tensors(model_bytes: bytes, tensors: OrderedDict) -> torch.jit.ScriptModule:
     """
     Reconstruct a TorchScript model from serialized structure and weights.
@@ -104,11 +95,7 @@ def replace_tensors(model_bytes: bytes, tensors: OrderedDict) -> torch.jit.Scrip
     # Convert numpy arrays back to tensors (zero-copy when possible)
     state_dict = OrderedDict()
     for name, array in tensors.items():
-        try:
-            tensor = _make_tensor_from_array(array)
-        except Exception:
-            # Fallback to copy if zero-copy fails
-            tensor = torch.as_tensor(array.copy())
+        tensor = _make_tensor_from_array(array)
         state_dict[name] = tensor
 
     # Load the real weights into the model
