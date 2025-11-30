@@ -1,5 +1,5 @@
 """
-Simple working example of JITActorWrapper with Ray Data.
+Simple working example of JITModelWrapper with Ray Data.
 """
 
 import ray
@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from ray.data import ActorPoolStrategy
 
-from ray_zerocopy import JITActorWrapper
+from ray_zerocopy import JITModelWrapper
 
 # Initialize Ray
 ray.init(ignore_reinit_error=True)
@@ -40,14 +40,14 @@ class SimplePipeline:
 
 pipeline = SimplePipeline(jit_model)
 
-# Create actor wrapper
-actor_wrapper = JITActorWrapper(pipeline)
+# Create wrapper
+wrapper = JITModelWrapper.from_model(pipeline, mode="actor")
 
 
 # Define actor class
 class InferenceActor:
-    def __init__(self, actor_wrapper):
-        self.pipeline = actor_wrapper.load()
+    def __init__(self, wrapper):
+        self.pipeline = wrapper.load()
 
     def __call__(self, batch):
         # Convert numpy to tensor
@@ -69,12 +69,12 @@ ds = ray.data.range(50).map_batches(generate_data, batch_size=10)
 # Run inference with actor pool
 results = ds.map_batches(
     InferenceActor,
-    fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+    fn_constructor_kwargs={"wrapper": wrapper},
     batch_size=10,
     compute=ActorPoolStrategy(size=2),
 )
 
 print(f"✓ Processed {results.count()} rows")
-print("✓ JITActorWrapper works with Ray Data!")
+print("✓ JITModelWrapper works with Ray Data!")
 
 ray.shutdown()

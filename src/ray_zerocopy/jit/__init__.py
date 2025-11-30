@@ -31,11 +31,17 @@ Usage:
 from .actors import (
     load_jit_model_in_actor,
     load_pipeline_for_actors,
+    model_info_to_model_refs,
     prepare_jit_model_for_actors,
     prepare_pipeline_for_actors,
 )
 from .rewrite import extract_tensors, extract_tensors_minimal, replace_tensors
-from .tasks import call_model, rewrite_pipeline
+from .tasks import (
+    call_model,
+    load_pipeline_for_tasks,
+    prepare_pipeline_for_tasks,
+    rewrite_pipeline,
+)
 
 __all__ = [
     # Actor-based functions
@@ -43,7 +49,10 @@ __all__ = [
     "load_jit_model_in_actor",
     "prepare_pipeline_for_actors",
     "load_pipeline_for_actors",
+    "model_info_to_model_refs",
     # Task-based functions
+    "prepare_pipeline_for_tasks",
+    "load_pipeline_for_tasks",
     "rewrite_pipeline",
     "call_model",
     # Core rewrite functions

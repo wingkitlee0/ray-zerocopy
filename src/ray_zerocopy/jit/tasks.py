@@ -16,12 +16,14 @@ zero-copy loading.
 """
 
 import copy
-from typing import Any, Set
+from typing import Any, Optional, Set, TypeVar
 
 import ray
 import torch
 
 from .rewrite import extract_tensors, replace_tensors
+
+T = TypeVar("T")
 
 
 @ray.remote
@@ -114,13 +116,129 @@ class _RemoteModelShim:
         raise TypeError(f"'{type(self).__name__}' object is not callable")
 
 
+def prepare_pipeline_for_tasks(
+    pipeline: T,
+    method_names: Optional[tuple] = None,
+    filter_private: bool = False,
+) -> tuple[T, dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]]:
+    """
+    Prepare a Pipeline instance that contains TorchScript models for zero-copy model loading in task mode.
+
+    This function extracts all TorchScript models (torch.jit.ScriptModule) from a pipeline and stores
+    them in Ray's object store. To load and reconstruct the pipeline, use `load_pipeline_for_tasks`.
+
+    Args:
+        pipeline: Pipeline object containing TorchScript models as attributes
+
+        method_names: Names of model methods to expose via remote tasks.
+            - If None: No method tracking (should not happen in task mode)
+            - If provided: Track only these methods (for _RemoteModelShim)
+            Example: ("__call__", "forward", "generate")
+            Default is ("__call__", "forward")
+
+        filter_private: Whether to exclude underscore-prefixed attributes during
+            auto-discovery (only applies when model_attr_names is None).
+            - False (default for tasks): Include all models, even those starting with '_'.
+              This ensures all models are available regardless of naming convention.
+            - True: Skip attributes starting with '_' to avoid exposing internal/private models.
+
+    Returns:
+        Tuple of (pipeline_skeleton, model_info_dict) where model_info_dict
+        maps attribute names to (model_ref, allowed_methods) tuples.
+
+        allowed_methods specifies which methods can be called remotely:
+        - Set[str] containing method names that are allowed to be
+          invoked remotely via _RemoteModelShim. This acts as an allowlist to
+          restrict which model methods can be called as Ray tasks.
+
+    Example - Task mode (include all models):
+        >>> skeleton, model_info = prepare_pipeline_for_tasks(
+        ...     pipeline,
+        ...     method_names=("__call__", "forward"),
+        ...     filter_private=False
+        ... )
+    """
+    if method_names is None:
+        method_names = ("__call__", "forward")
+
+    # Auto-discover TorchScript model attributes
+    jit_model_attr_names = [
+        name
+        for name in dir(pipeline)
+        if (not filter_private or not name.startswith("_"))
+        and isinstance(getattr(pipeline, name), torch.jit.ScriptModule)
+    ]
+
+    # Create a shallow copy of the pipeline
+    pipeline_skeleton = copy.copy(pipeline)
+
+    # Extract and store each model in the object store
+    model_info = {}
+    for attr_name in jit_model_attr_names:
+        model = getattr(pipeline, attr_name)
+        if isinstance(model, torch.jit.ScriptModule):
+            # Store extracted tensors in object store
+            model_ref = ray.put(extract_tensors(model))
+
+            # Track methods for task mode
+            allowed_methods = {m for m in method_names if hasattr(model, m)}
+            # Always include __call__ if the model is callable
+            if hasattr(model, "__call__") and callable(model):
+                allowed_methods.add("__call__")
+
+            model_info[attr_name] = (model_ref, allowed_methods)
+            # Set the attribute to None in skeleton to save memory
+            setattr(pipeline_skeleton, attr_name, None)
+
+    return pipeline_skeleton, model_info
+
+
+def load_pipeline_for_tasks(
+    pipeline_skeleton: T,
+    model_info: dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]],
+) -> T:
+    """
+    Load a pipeline for task-based execution by creating remote model shims.
+
+    Only the methods (`method_names`) specified during the
+    `prepare_pipeline_for_tasks` call will be exposed via remote tasks.
+
+    Args:
+        pipeline_skeleton: Pipeline skeleton from prepare_pipeline_for_tasks
+        model_info: Model info dict from prepare_pipeline_for_tasks (with allowed_methods)
+
+    Returns:
+        Pipeline with models replaced by task-based shims
+
+    Example:
+        >>> # Prepare pipeline for tasks
+        >>> skeleton, model_info = prepare_pipeline_for_tasks(
+        ...     pipeline,
+        ...     method_names=("__call__", "forward"),
+        ...     filter_private=False
+        ... )
+        >>>
+        >>> # Load for task execution
+        >>> task_pipeline = load_pipeline_for_tasks(skeleton, model_info)
+        >>> result = task_pipeline.process(data)  # Models run in Ray tasks
+    """
+    # Create a shallow copy and replace models with shims
+    result = copy.copy(pipeline_skeleton)
+    for attr_name, (model_ref, allowed_methods) in model_info.items():
+        if allowed_methods is not None:  # Only create shims if methods were tracked
+            shim = _RemoteModelShim(model_ref, allowed_methods)
+            setattr(result, attr_name, shim)
+
+    return result
+
+
 def rewrite_pipeline(pipeline: Any, method_names=("__call__", "forward")) -> Any:
     """
     Rewrites TorchScript models in a model processing pipeline into Ray tasks
     that load the model using zero-copy model loading.
 
-    This is a low-level API. For most use cases, consider using
-    ray_zerocopy.JITTaskWrapper for a higher-level interface.
+    This is a convenience function that combines prepare_pipeline_for_tasks and load_pipeline_for_tasks.
+    For most use cases, consider using ray_zerocopy.JITModelWrapper for a higher-level interface.
 
     Limitations:
     * Only models that are subclasses of torch.jit.ScriptModule will be rewritten.
@@ -138,31 +256,7 @@ def rewrite_pipeline(pipeline: Any, method_names=("__call__", "forward")) -> Any
         A shallow copy of pipeline in which all TorchScript models
         are replaced with wrapper objects that forward calls to Ray tasks
     """
-    # Find all TorchScript models hanging directly off the pipeline object
-    jit_model_attr_names = [
-        name
-        for name in dir(pipeline)
-        if isinstance(getattr(pipeline, name), torch.jit.ScriptModule)
-    ]
-
-    # Shallow-copy the original pipeline
-    result = copy.copy(pipeline)
-
-    # Replace TorchScript models with shims
-    for name in jit_model_attr_names:
-        model = getattr(result, name)
-        model_ref = ray.put(extract_tensors(model))
-
-        # Determine which methods exist on this model
-        allowed_methods = {m for m in method_names if hasattr(model, m)}
-
-        # Always include __call__ if the model is callable, as pipeline methods
-        # often call the model directly (e.g., self.model(x))
-        if hasattr(model, "__call__") and callable(model):
-            allowed_methods.add("__call__")
-
-        # Create the shim
-        shim = _RemoteModelShim(model_ref, allowed_methods)
-        setattr(result, name, shim)
-
-    return result
+    skeleton, model_info = prepare_pipeline_for_tasks(
+        pipeline, method_names=method_names, filter_private=False
+    )
+    return load_pipeline_for_tasks(skeleton, model_info)
