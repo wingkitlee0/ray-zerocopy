@@ -3,42 +3,24 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - "v*"  # Trigger on version tags like v1.0.0, v0.2.1, etc.
+      - 'v*'  # Trigger on tags like v0.1.0, v1.2.3, etc.
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write  # Required for trusted publishing (recommended)
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Required for setuptools-scm to read git tags
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.11"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Install build dependencies
-        run: |
-          uv pip install --system uv_build setuptools-scm
+          enable-cache: false
 
       - name: Build package
-        run: |
-          uv build
+        run: uv build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        # Uses trusted publishing (no token needed if configured in PyPI)
-        # Alternative: Use PYPI_API_TOKEN secret if not using trusted publishing
-        # with:
-        #   password: ${{ secrets.PYPI_API_TOKEN }}
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
