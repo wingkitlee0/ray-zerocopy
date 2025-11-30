@@ -203,14 +203,11 @@ actor_wrapper = JITActorWrapper(jit_pipeline)
 - PyTorch
 - Ray
 
-## Origin
+## Acknowledgments
 
-Based on [project-codeflare/zero-copy-model-loading](https://github.com/project-codeflare/zero-copy-model-loading)
+This project includes code derived from IBM's [Zero-Copy Model Loading](https://github.com/project-codeflare/zero-copy-model-loading)
+project, licensed under Apache 2.0.
 
 ## License
 
 Apache License 2.0 (see [LICENSE](LICENSE))
-
-## Contributing
-
-Contributions welcome! Please open an issue or PR.
