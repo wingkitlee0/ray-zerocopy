@@ -1,14 +1,14 @@
 """
 Tests for the new unified wrapper API.
 
-Tests ModelWrapper.from_model(), for_tasks(), JITTaskWrapper, and JITActorWrapper.
+Tests ModelWrapper.from_model(), for_tasks(), and JITModelWrapper.
 """
 
 import pytest
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import JITActorWrapper, JITTaskWrapper, ModelWrapper
+from ray_zerocopy import JITModelWrapper, ModelWrapper
 
 
 # Test models and pipelines
@@ -156,12 +156,12 @@ def test_model_wrapper_actor_multi_model():
 
 
 # ============================================================================
-# JITTaskWrapper Tests
+# JITModelWrapper Task Mode Tests
 # ============================================================================
 
 
-def test_jit_task_wrapper_basic():
-    """Test basic JITTaskWrapper functionality."""
+def test_jit_model_wrapper_task_basic():
+    """Test basic JITModelWrapper task mode functionality."""
     # Create and trace a model
     model = SimpleModel()
     model.eval()
@@ -177,7 +177,7 @@ def test_jit_task_wrapper_basic():
             return self.model(x)
 
     pipeline = JITPipeline()
-    wrapped = JITTaskWrapper(pipeline)
+    wrapped = JITModelWrapper.for_tasks(pipeline)
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -187,8 +187,33 @@ def test_jit_task_wrapper_basic():
     assert isinstance(result, torch.Tensor), "Result should be a tensor"
 
 
-def test_jit_task_wrapper_forward_method():
-    """Test JITTaskWrapper with forward method."""
+def test_jit_model_wrapper_task_from_model():
+    """Test JITModelWrapper.from_model() in task mode."""
+    model = SimpleModel()
+    model.eval()
+    example_input = torch.randn(1, 10)
+    jit_model = torch.jit.trace(model, example_input)
+
+    class JITPipeline:
+        def __init__(self):
+            self.model = jit_model
+
+        def __call__(self, x):
+            return self.model(x)
+
+    pipeline = JITPipeline()
+    wrapper = JITModelWrapper.from_model(pipeline, mode="task")
+    wrapped = wrapper.load()
+
+    # Test inference
+    test_input = torch.randn(3, 10)
+    result = wrapped(test_input)
+
+    assert result.shape == (3, 5)
+
+
+def test_jit_model_wrapper_task_forward_method():
+    """Test JITModelWrapper task mode with forward method."""
     model = SimpleModel()
     model.eval()
     example_input = torch.randn(1, 10)
@@ -206,7 +231,7 @@ def test_jit_task_wrapper_forward_method():
             return self.forward(x)
 
     pipeline = JITPipeline()
-    wrapped = JITTaskWrapper(pipeline, method_names=("forward",))
+    wrapped = JITModelWrapper.for_tasks(pipeline, method_names=("forward",))
 
     # Test forward method
     test_input = torch.randn(3, 10)
@@ -215,8 +240,8 @@ def test_jit_task_wrapper_forward_method():
     assert result.shape == (3, 5)
 
 
-def test_jit_task_wrapper_multi_model():
-    """Test JITTaskWrapper with multiple TorchScript models."""
+def test_jit_model_wrapper_task_multi_model():
+    """Test JITModelWrapper task mode with multiple TorchScript models."""
     # Trace encoder
     encoder = nn.Sequential(nn.Linear(10, 8), nn.ReLU())
     encoder.eval()
@@ -238,7 +263,7 @@ def test_jit_task_wrapper_multi_model():
             return self.decoder(encoded)
 
     pipeline = JITPipeline()
-    wrapped = JITTaskWrapper(pipeline)
+    wrapped = JITModelWrapper.for_tasks(pipeline)
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -248,12 +273,12 @@ def test_jit_task_wrapper_multi_model():
 
 
 # ============================================================================
-# JITActorWrapper Tests
+# JITModelWrapper Actor Mode Tests
 # ============================================================================
 
 
-def test_jit_actor_wrapper_basic():
-    """Test basic JITActorWrapper functionality."""
+def test_jit_model_wrapper_actor_basic():
+    """Test basic JITModelWrapper actor mode functionality."""
     # Create and trace a model
     model = SimpleModel()
     model.eval()
@@ -269,10 +294,10 @@ def test_jit_actor_wrapper_basic():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline)
+    wrapper = JITModelWrapper.from_model(pipeline, mode="actor")
 
     # Load in current process (simulating actor)
-    loaded_pipeline = actor_wrapper.load()
+    loaded_pipeline = wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)
@@ -282,8 +307,8 @@ def test_jit_actor_wrapper_basic():
     assert isinstance(result, torch.Tensor), "Result should be a tensor"
 
 
-def test_jit_actor_wrapper_multi_model():
-    """Test JITActorWrapper with multiple models."""
+def test_jit_model_wrapper_actor_multi_model():
+    """Test JITModelWrapper actor mode with multiple models."""
     # Trace encoder
     encoder = nn.Sequential(nn.Linear(10, 8), nn.ReLU())
     encoder.eval()
@@ -305,39 +330,16 @@ def test_jit_actor_wrapper_multi_model():
             return self.decoder(encoded)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline)
+    wrapper = JITModelWrapper.from_model(pipeline, mode="actor")
 
     # Load in current process
-    loaded_pipeline = actor_wrapper.load()
+    loaded_pipeline = wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)
     result = loaded_pipeline(test_input)
 
     assert result.shape == (3, 5)
-
-
-def test_jit_actor_wrapper_constructor_kwargs():
-    """Test JITActorWrapper.constructor_kwargs property."""
-    model = SimpleModel()
-    model.eval()
-    example_input = torch.randn(1, 10)
-    jit_model = torch.jit.trace(model, example_input)
-
-    class JITPipeline:
-        def __init__(self):
-            self.model = jit_model
-
-        def __call__(self, x):
-            return self.model(x)
-
-    pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline)
-
-    kwargs = actor_wrapper.constructor_kwargs
-
-    assert "pipeline_skeleton" in kwargs
-    assert "model_refs" in kwargs
 
 
 # ============================================================================
@@ -369,14 +371,15 @@ def test_wrapper_api_consistency():
         nn_pipeline
     )  # Returns pipeline, not wrapper
     actor_wrapper = ModelWrapper.from_model(nn_pipeline, mode="actor")
-    jit_task_wrapper = JITTaskWrapper(jit_pipeline)
-    jit_actor_wrapper = JITActorWrapper(jit_pipeline)
+    jit_task_rewritten = JITModelWrapper.for_tasks(jit_pipeline)
+    jit_actor_wrapper = JITModelWrapper.from_model(jit_pipeline, mode="actor")
 
     # Actor wrappers should have load() method
     assert hasattr(jit_actor_wrapper, "load")
 
     # Task rewritten should be callable
     assert callable(task_rewritten)
+    assert callable(jit_task_rewritten)
 
 
 def test_wrapper_determinism():
@@ -402,8 +405,8 @@ def test_wrapper_determinism():
     assert torch.allclose(original_output, actor_output, rtol=1e-4)
 
 
-def test_jit_task_wrapper_pickling():
-    """Test JITTaskWrapper pickling (__getstate__ and __setstate__)."""
+def test_jit_model_wrapper_task_pickling():
+    """Test JITModelWrapper task mode pickling (__getstate__ and __setstate__)."""
     import pickle
 
     model = SimpleModel()
@@ -412,20 +415,21 @@ def test_jit_task_wrapper_pickling():
     jit_model = torch.jit.trace(model, example_input)
 
     pipeline = JITPipeline(jit_model)
-    wrapped = JITTaskWrapper(pipeline)
+    wrapper = JITModelWrapper.from_model(pipeline, mode="task")
 
     # Test pickling
-    pickled = pickle.dumps(wrapped)
+    pickled = pickle.dumps(wrapper)
     unpickled = pickle.loads(pickled)
 
     # Test that unpickled wrapper still works
+    wrapped = unpickled.load()
     test_input = torch.randn(3, 10)
-    result = unpickled(test_input)
+    result = wrapped(test_input)
     assert result.shape == (3, 5)
 
 
-def test_jit_actor_wrapper_pickling():
-    """Test JITActorWrapper pickling (__getstate__ and __setstate__)."""
+def test_jit_model_wrapper_actor_pickling():
+    """Test JITModelWrapper actor mode pickling (__getstate__ and __setstate__)."""
     import pickle
 
     model = SimpleModel()
@@ -434,10 +438,10 @@ def test_jit_actor_wrapper_pickling():
     jit_model = torch.jit.trace(model, example_input)
 
     pipeline = JITPipeline(jit_model)
-    actor_wrapper = JITActorWrapper(pipeline)
+    wrapper = JITModelWrapper.from_model(pipeline, mode="actor")
 
     # Test pickling
-    pickled = pickle.dumps(actor_wrapper)
+    pickled = pickle.dumps(wrapper)
     unpickled = pickle.loads(pickled)
 
     # Test that unpickled wrapper still works
@@ -447,15 +451,15 @@ def test_jit_actor_wrapper_pickling():
     assert result.shape == (3, 5)
 
 
-def test_jit_task_wrapper_getattr():
-    """Test JITTaskWrapper __getattr__ forwarding."""
+def test_jit_model_wrapper_getattr():
+    """Test JITModelWrapper __getattr__ forwarding in task mode."""
     model = SimpleModel()
     model.eval()
     example_input = torch.randn(1, 10)
     jit_model = torch.jit.trace(model, example_input)
 
     pipeline = JITPipeline(jit_model)
-    wrapped = JITTaskWrapper(pipeline)
+    wrapped = JITModelWrapper.for_tasks(pipeline)
 
     # Test that custom attributes are accessible
     assert wrapped.custom_attr == "test_value"

@@ -1,11 +1,8 @@
 """
-Example: Using zero-copy TorchScript model loading with Ray Data actors (NEW!)
+Example: Using zero-copy TorchScript model loading with Ray Data actors
 
-This example demonstrates the NEW JITActorWrapper for efficient TorchScript
+This example demonstrates JITModelWrapper for efficient TorchScript
 model inference with Ray Data's map_batches and ActorPoolStrategy.
-
-This functionality was NOT previously available - TorchScript models can now
-be used with Ray actors just like regular nn.Module models!
 """
 
 import numpy as np
@@ -14,7 +11,7 @@ import torch
 import torch.nn as nn
 from ray.data import ActorPoolStrategy
 
-from ray_zerocopy import JITActorWrapper
+from ray_zerocopy import JITModelWrapper
 
 
 # Example 1: Simple JIT model with actors
@@ -51,13 +48,13 @@ def example_simple_jit_actor():
 
     # Create and wrap pipeline for actors
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline)
+    wrapper = JITModelWrapper.from_model(pipeline, mode="actor")
 
     # Define actor class
     class JITInferenceActor:
-        def __init__(self, actor_wrapper):
+        def __init__(self, wrapper):
             # Load JIT pipeline from wrapper (zero-copy)
-            self.pipeline = actor_wrapper.load()
+            self.pipeline = wrapper.load()
 
         def __call__(self, batch):
             # Convert batch to tensor
@@ -78,7 +75,7 @@ def example_simple_jit_actor():
     # Run inference using actor pool
     results = ds.map_batches(
         JITInferenceActor,
-        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+        fn_constructor_kwargs={"wrapper": wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=4),
     )
@@ -144,12 +141,12 @@ def example_jit_pipeline_actors():
 
     # Wrap for actors
     pipeline = EncoderDecoderPipeline()
-    actor_wrapper = JITActorWrapper(pipeline)
+    wrapper = JITModelWrapper.from_model(pipeline, mode="actor")
 
     # Define actor class
     class PipelineActor:
-        def __init__(self, actor_wrapper):
-            self.pipeline = actor_wrapper.load()
+        def __init__(self, wrapper):
+            self.pipeline = wrapper.load()
 
         def __call__(self, batch):
             inputs = torch.tensor(batch["data"], dtype=torch.float32)
@@ -167,7 +164,7 @@ def example_jit_pipeline_actors():
     # Run inference
     results = ds.map_batches(
         PipelineActor,
-        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+        fn_constructor_kwargs={"wrapper": wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=4),
     )
@@ -211,12 +208,12 @@ def example_jit_with_processing():
             return self.model(x)
 
     pipeline = JITPipeline()
-    actor_wrapper = JITActorWrapper(pipeline)
+    wrapper = JITModelWrapper.from_model(pipeline, mode="actor")
 
     # Actor with pre/post processing
     class ProcessingActor:
-        def __init__(self, actor_wrapper):
-            self.pipeline = actor_wrapper.load()
+        def __init__(self, wrapper):
+            self.pipeline = wrapper.load()
 
         def __call__(self, batch):
             # Preprocess
@@ -240,7 +237,7 @@ def example_jit_with_processing():
     # Run inference
     results = ds.map_batches(
         ProcessingActor,
-        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+        fn_constructor_kwargs={"wrapper": wrapper},
         batch_size=32,
         compute=ActorPoolStrategy(size=2),
     )
@@ -276,7 +273,7 @@ def main():
         print("\nKey takeaways:")
         print("- TorchScript models can now be used with Ray actors")
         print("- Zero-copy loading works the same as nn.Module")
-        print("- JITActorWrapper provides the same clean API as ActorWrapper")
+        print("- JITModelWrapper provides the same clean API as ModelWrapper")
         print("=" * 70)
 
     finally:

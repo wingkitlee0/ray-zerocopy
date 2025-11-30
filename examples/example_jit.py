@@ -1,17 +1,15 @@
 """
 Example demonstrating zero-copy loading with TorchScript models.
 
-This example shows how to use the NEW JITTaskWrapper API for
+This example shows how to use JITModelWrapper API for
 zero-copy model loading with compiled PyTorch models.
-
-For JIT actor support (NEW!), see the new_api_examples.py file.
 """
 
 import ray
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import JITTaskWrapper
+from ray_zerocopy import JITModelWrapper
 from ray_zerocopy.jit import extract_tensors, replace_tensors
 
 
@@ -117,11 +115,11 @@ def example_ray_jit():
     print()
 
 
-# Example 3: Using the high-level API with pipeline - NEW JITTaskWrapper!
+# Example 3: Using the high-level API with pipeline
 def example_pipeline_jit():
-    """Example using the NEW JITTaskWrapper API."""
+    """Example using JITModelWrapper API."""
     print("=" * 60)
-    print("Example 3: TorchScript Pipeline API (NEW JITTaskWrapper)")
+    print("Example 3: TorchScript Pipeline API (JITModelWrapper)")
     print("=" * 60)
 
     if not ray.is_initialized():
@@ -153,10 +151,10 @@ def example_pipeline_jit():
 
     print(f"Original pipeline prediction shape: {original_result.shape}")
 
-    # Wrap pipeline with NEW JITTaskWrapper
-    wrapped_pipeline = JITTaskWrapper(pipeline)
+    # Wrap pipeline with JITModelWrapper
+    wrapped_pipeline = JITModelWrapper.for_tasks(pipeline)
 
-    print("Pipeline wrapped with JITTaskWrapper")
+    print("Pipeline wrapped with JITModelWrapper")
     print("Calls now go through Ray tasks with zero-copy loading")
 
     # Use the wrapped pipeline (calls happen via Ray tasks)
@@ -166,7 +164,7 @@ def example_pipeline_jit():
     print(
         f"Results match: {torch.allclose(original_result, wrapped_result, rtol=1e-4)}"
     )
-    print("✓ NEW API makes TorchScript zero-copy much simpler!")
+    print("✓ JITModelWrapper makes TorchScript zero-copy much simpler!")
     print()
 
 

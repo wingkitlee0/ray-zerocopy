@@ -6,7 +6,7 @@ execution modes for zero-copy model sharing.
 
 The wrapper classes:
 - ModelWrapper: Handles both nn.Module and Pipeline objects for task and actor usage
-- JITTaskWrapper/JITActorWrapper: For TorchScript (compiled) models (in wrappers.py)
+- JITModelWrapper: For TorchScript (compiled) models (in wrappers.py)
 
 Key API Patterns:
 

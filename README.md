@@ -191,14 +191,14 @@ pipeline = model_wrapper.load()  # Load with zero-copy in actor
 ### TorchScript Support
 
 ```python
-from ray_zerocopy import JITTaskWrapper, JITActorWrapper
+from ray_zerocopy import JITModelWrapper
 
-# JITTaskWrapper - For TorchScript models with Ray Tasks
+# Task mode - For TorchScript models with Ray Tasks
 jit_pipeline = torch.jit.trace(pipeline, example_input)
-wrapped = JITTaskWrapper(jit_pipeline)
+wrapped = JITModelWrapper.for_tasks(jit_pipeline)
 
-# JITActorWrapper - For TorchScript models with Ray Actors
-actor_wrapper = JITActorWrapper(jit_pipeline)
+# Actor mode - For TorchScript models with Ray Actors
+wrapper = JITModelWrapper.from_model(jit_pipeline, mode="actor")
 ```
 
 ## Requirements

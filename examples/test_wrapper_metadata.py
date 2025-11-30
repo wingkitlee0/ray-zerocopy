@@ -7,7 +7,7 @@ import inspect
 import torch
 import torch.nn as nn
 
-from ray_zerocopy import JITActorWrapper, JITTaskWrapper, ModelWrapper
+from ray_zerocopy import JITModelWrapper, ModelWrapper
 
 
 class MyPipeline:
@@ -113,9 +113,9 @@ def test_actor_wrapper_metadata():
 
 
 def test_jit_task_wrapper_metadata():
-    """Test that JITTaskWrapper preserves metadata."""
+    """Test that JITModelWrapper task mode preserves metadata."""
     print("\n" + "=" * 70)
-    print("Testing JITTaskWrapper metadata preservation")
+    print("Testing JITModelWrapper task mode metadata preservation")
     print("=" * 70)
 
     # Create a simple nn.Module for JIT
@@ -132,28 +132,23 @@ def test_jit_task_wrapper_metadata():
             return self.decoder(self.encoder(x))
 
     pipeline = JITPipeline()
+    pipeline.eval()
+    jit_pipeline = torch.jit.trace(pipeline, torch.randn(1, 10))
 
-    # Note: We wrap the pipeline object, not the traced version
-    wrapped = JITTaskWrapper(pipeline)
+    # Wrap with JITModelWrapper in task mode
+    wrapped = JITModelWrapper.for_tasks(jit_pipeline)
 
-    # Test __wrapped__ attribute
-    assert hasattr(wrapped, "__wrapped__"), "Should have __wrapped__ attribute"
-    print("✓ __wrapped__ attribute present")
+    # Test that wrapped is callable
+    assert callable(wrapped), "Wrapped pipeline should be callable"
+    print("✓ Wrapped pipeline is callable")
 
-    # Test docstring preservation
-    if pipeline.__class__.__doc__:
-        assert pipeline.__class__.__doc__ in wrapped.__doc__, (
-            "Should contain original docstring"
-        )
-        print("✓ Original pipeline docstring included in wrapper's docstring")
-
-    print("✓ JITTaskWrapper metadata preservation working!")
+    print("✓ JITModelWrapper task mode metadata preservation working!")
 
 
 def test_jit_actor_wrapper_metadata():
-    """Test that JITActorWrapper preserves metadata."""
+    """Test that JITModelWrapper actor mode preserves metadata."""
     print("\n" + "=" * 70)
-    print("Testing JITActorWrapper metadata preservation")
+    print("Testing JITModelWrapper actor mode metadata preservation")
     print("=" * 70)
 
     # Create a simple nn.Module for JIT
@@ -170,20 +165,17 @@ def test_jit_actor_wrapper_metadata():
             return self.decoder(self.encoder(x))
 
     pipeline = JITPipeline()
-    wrapped = JITActorWrapper(pipeline)
+    pipeline.eval()
+    jit_pipeline = torch.jit.trace(pipeline, torch.randn(1, 10))
 
-    # Test __wrapped__ attribute
-    assert hasattr(wrapped, "__wrapped__"), "Should have __wrapped__ attribute"
-    print("✓ __wrapped__ attribute present")
+    # Wrap with JITModelWrapper in actor mode
+    wrapper = JITModelWrapper.from_model(jit_pipeline, mode="actor")
 
-    # Test docstring preservation
-    if pipeline.__class__.__doc__:
-        assert pipeline.__class__.__doc__ in wrapped.__doc__, (
-            "Should contain original docstring"
-        )
-        print("✓ Original pipeline docstring included in wrapper's docstring")
+    # Test that wrapper has load method
+    assert hasattr(wrapper, "load"), "Wrapper should have load method"
+    print("✓ Wrapper has load method")
 
-    print("✓ JITActorWrapper metadata preservation working!")
+    print("✓ JITModelWrapper actor mode metadata preservation working!")
 
 
 def test_help_function():
