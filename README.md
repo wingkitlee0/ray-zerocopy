@@ -203,7 +203,6 @@ actor_wrapper = JITActorWrapper(jit_pipeline)
 
 ## Requirements
 
-- Python 3.8+
 - PyTorch
 - Ray
 
