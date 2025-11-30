@@ -7,12 +7,12 @@ import ray
 from ray.data import ActorPoolStrategy
 
 from ray_zerocopy import ModelWrapper
-from ray_zerocopy.benchmark.monitor import monitor_memory_context
-from ray_zerocopy.benchmark.results import (
+from .monitor import monitor_memory_context
+from .results import (
     aggregate_memory_stats_from_results,
     format_ray_core_results,
 )
-from ray_zerocopy.benchmark.workers import (
+from .workers import (
     ActorBasedRayData,
     ActorBasedWorker,
     NormalActorRayData,
