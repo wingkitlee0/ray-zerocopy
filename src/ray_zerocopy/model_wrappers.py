@@ -11,8 +11,9 @@ The wrapper classes:
 Key API Patterns:
 
 1. **Task Mode** - For ad-hoc inference with Ray tasks:
-   - Use `ModelWrapper.for_tasks()` or `ModelWrapper.from_model(..., mode="task")`
-   - Wrapper is immediately usable: `result = wrapped(data)`
+   - Use `ModelWrapper.for_tasks()` to get a callable rewritten pipeline
+   - Or use `ModelWrapper.from_model(..., mode="task")` then call `.load()`
+   - Pipeline is immediately usable: `result = rewritten(data)`
 
 2. **Actor Mode** - For Ray Data and long-running actors:
    - Use `ModelWrapper.from_model(..., mode="actor")`
@@ -23,8 +24,8 @@ Usage Examples:
     # 1. Task Mode - Immediate use
     >>> from ray_zerocopy import ModelWrapper
     >>> pipeline = MyPipeline()
-    >>> wrapped = ModelWrapper.for_tasks(pipeline)
-    >>> result = wrapped(data)  # Each call spawns a Ray task
+    >>> rewritten = ModelWrapper.for_tasks(pipeline)
+    >>> result = rewritten(data)  # Each call spawns a Ray task
 
     # 2. Actor Mode - For Ray Data
     >>> from ray_zerocopy import ModelWrapper
@@ -68,6 +69,11 @@ from ray_zerocopy._internal import WrapperMixin
 
 T = TypeVar("T")
 
+# Type aliases for model info formats
+TaskModelInfo = dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]
+ActorModelInfo = dict[str, ray.ObjectRef]
+ModelInfo = Union[TaskModelInfo, ActorModelInfo]
+
 
 class _ModuleContainer:
     """Internal container to make standalone nn.Module look like a pipeline object."""
@@ -88,30 +94,35 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
     - Task mode: Models are executed via Ray tasks with zero-copy loading
     - Actor mode: Models are prepared for loading in Ray actors with zero-copy
 
-    Args:
+    Attributes:
         skeleton: The skeleton of the model or pipeline
-        model_refs: The model references for the model or pipeline
+        model_refs: A dict of Ray object references to the model tensors
         is_standalone_module: Whether the model or pipeline is a standalone module
         mode: Execution mode - "task" or "actor"
-        rewritten: For task mode, the immediately-usable rewritten pipeline
-        model_info: For task mode, model info with method tracking
+        model_info: Model info dict with method tracking (task mode) or just refs (actor mode)
 
-    Example - Task Mode (immediate use):
+    Examples:
+        Task Mode (using for_tasks shortcut):
+
         >>> from ray_zerocopy import ModelWrapper
         >>> model = YourModel()
+        >>> rewritten = ModelWrapper.for_tasks(model)
+        >>> result = rewritten(data)  # Callable pipeline
+        >>>
+
+        Task Mode (using from_model + load):
+
         >>> wrapper = ModelWrapper.from_model(model, mode="task")
-        >>> result = wrapper(data)  # Ready to use immediately
+        >>> rewritten = wrapper.load()  # Get callable pipeline
+        >>> result = rewritten(data)
 
-    Example - Task Mode Shortcut:
-        >>> wrapper = ModelWrapper.for_tasks(model)
-        >>> result = wrapper(data)  # Equivalent to rewrite_pipeline()
+        Actor Mode:
 
-    Example - Actor Mode:
         >>> wrapper = ModelWrapper.from_model(model, mode="actor")
         >>>
         >>> class InferenceActor:
         ...     def __init__(self, model_wrapper):
-        ...         self.model = model_wrapper.load()
+        ...         self.model = model_wrapper.load()  # Inside an actor's __init__
         ...     def __call__(self, batch):
         ...         return self.model(batch["data"])
         >>>
@@ -123,42 +134,45 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
     """
 
     _skeleton: T
-    _model_refs: dict[str, ray.ObjectRef]
+    _model_info: ModelInfo
     _is_standalone_module: bool
     _mode: Literal["task", "actor"]
-    _rewritten: Optional[T]  # For task mode
-    _model_info: Optional[
-        dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]
-    ]  # For task mode
 
     def __init__(
         self,
         skeleton: T,
-        model_refs: dict[str, ray.ObjectRef],
+        model_info: ModelInfo,
         is_standalone_module: bool = False,
         mode: Literal["task", "actor"] = "actor",
-        rewritten: Optional[T] = None,
-        model_info: Optional[
-            dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]
-        ] = None,
     ):
         """
         Initialize ModelWrapper.
 
         Args:
             skeleton: The skeleton of the model or pipeline
-            model_refs: The model references
+            model_info: Model info dict. In task mode: dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]
+                (with method tracking). In actor mode: dict[str, ray.ObjectRef] (just refs).
             is_standalone_module: Whether this is a standalone module
             mode: Execution mode ("task" or "actor")
-            rewritten: For task mode, the rewritten pipeline
-            model_info: For task mode, model info with method tracking
         """
         self._skeleton = skeleton
-        self._model_refs = model_refs
         self._is_standalone_module = is_standalone_module
         self._mode = mode
-        self._rewritten = rewritten
         self._model_info = model_info
+
+    @property
+    def model_refs(self) -> dict[str, ray.ObjectRef]:
+        """Get model references, extracted from model_info."""
+        if self._mode == "task":
+            # Task mode: model_info is TaskModelInfo (dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]])
+            model_info: TaskModelInfo = self._model_info  # type: ignore[assignment]
+            return {
+                attr_name: model_ref for attr_name, (model_ref, _) in model_info.items()
+            }
+        else:
+            # Actor mode: model_info is ActorModelInfo (dict[str, ray.ObjectRef])
+            model_info: ActorModelInfo = self._model_info  # type: ignore[assignment]
+            return model_info
 
     @classmethod
     def from_model(
@@ -175,17 +189,18 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
 
         Args:
             model_or_pipeline: The model or pipeline to wrap
-            mode: Execution mode - "task" for immediate use, "actor" for actor loading
+            mode: Execution mode - "task" for task-based execution, "actor" for actor loading
                 Must be "task" or "actor". Defaults to "actor".
             model_attr_names: The attribute names of the models in the pipeline
             method_names: Model methods to expose via remote tasks (auto-selected if None)
 
         Returns:
-            A ModelWrapper instance
+            A ModelWrapper instance (not callable - use `.load()` to get the callable pipeline)
 
         Example - Task mode:
             >>> wrapper = ModelWrapper.from_model(pipeline, mode="task")
-            >>> result = wrapper.process(data)  # Ready to use immediately
+            >>> rewritten = wrapper.load()  # Get callable pipeline
+            >>> result = rewritten(data)  # Use the pipeline
 
         Example - Actor mode:
             >>> wrapper = ModelWrapper.from_model(pipeline, mode="actor")
@@ -208,49 +223,41 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
                 method_names = None  # No method tracking in actor mode
 
         if mode == "task":
-            # Task mode: prepare + load immediately
+            # Task mode: prepare only (no loading)
             skeleton, model_info = rzc_nn.prepare_pipeline(
                 _pipeline,
                 method_names=method_names,
                 filter_private=False,
             )
 
-            # Load immediately for task execution
-            rewritten = rzc_nn.load_pipeline_for_tasks(skeleton, model_info)
-
-            # Extract simplified model_refs for pickling
-            model_refs = {
-                attr_name: model_ref for attr_name, (model_ref, _) in model_info.items()
-            }
-
+            # model_info is TaskModelInfo in task mode
             _wrapper = cls(
                 skeleton,
-                model_refs,
+                model_info,
                 is_standalone,
                 mode="task",
-                rewritten=rewritten,
-                model_info=model_info,
             )
             # Use skeleton to avoid capturing model reference
             _wrapper._configure_wrapper(skeleton)  # type: ignore[arg-type]
 
-            # Preserve call signature from original pipeline
-            _wrapper._preserve_call_signature(_pipeline)  # type: ignore[arg-type]
-
         else:
             # Actor mode: prepare only (no loading)
-            skeleton, model_refs = rzc_nn.prepare_pipeline_for_actors(
+            skeleton, model_info = rzc_nn.prepare_pipeline(
                 _pipeline,
                 model_attr_names=model_attr_names,
+                method_names=None,  # No method tracking for actors
+                filter_private=True,
+            )
+            # Convert to ActorModelInfo format (just refs, no method tracking)
+            actor_model_info: ActorModelInfo = rzc_nn.model_info_to_model_refs(
+                model_info
             )
 
             _wrapper = cls(
                 skeleton,
-                model_refs,
+                actor_model_info,
                 is_standalone,
                 mode="actor",
-                rewritten=None,
-                model_info=None,
             )
             # Use skeleton to avoid capturing model reference
             _wrapper._configure_wrapper(skeleton)  # type: ignore[arg-type]
@@ -262,37 +269,35 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
         cls,
         model_or_pipeline: T,
         method_names: Optional[tuple] = None,
-    ) -> "ModelWrapper[T]":
-        """Convenience shortcut for task mode - equivalent to rewrite_pipeline().
+    ) -> torch.nn.Module | T:
+        """Convert a model or pipeline into a callable rewritten pipeline with
+        zero-copy model loading.
 
-        This immediately prepares and loads the pipeline for task-based execution,
-        making it ready to use right away.
+        Note:
+            Under the hood, this is a wrapper around `from_model()` and `load()`
+            that immediately prepares and loads the converted pipeline. The returned
+            pipeline will use a remote Ray task for execution.
 
         Args:
             model_or_pipeline: The model or pipeline to wrap
-            method_names: Model methods to expose via remote tasks (defaults to ("__call__",))
+            method_names: Model methods to expose via remote tasks (defaults to ``("__call__",)``)
 
         Returns:
-            A ModelWrapper ready for immediate use
-
-        Example:
-            >>> wrapper = ModelWrapper.for_tasks(pipeline)
-            >>> result = wrapper.process(data)  # Immediately usable
+            A rewritten pipeline ready for immediate use (callable). Each call will spawn a Ray task.
         """
-        return cls.from_model(
+        wrapper = cls.from_model(
             model_or_pipeline,
             mode="task",
             method_names=method_names,
         )
+        return wrapper.load()
 
     def load(self, _use_fast_load: bool = False) -> torch.nn.Module | T:
         """Load the model/pipeline from the wrapper.
 
-        This function is to be called from within an actor's __init__ to deserialize and
-        load the model from Ray's object store using zero-copy.
+        For task mode: Creates the rewritten pipeline on-demand with remote model shims.
+        For actor mode: Loads the pipeline from Ray's object store using zero-copy.
 
-        Note: For task mode wrappers, this returns the rewritten pipeline.
-        For actor mode wrappers, this loads the pipeline from the object store.
         Models are loaded on CPU. Users should handle device placement themselves after loading.
 
         Args:
@@ -302,7 +307,7 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
         Returns:
             The deserialized pipeline ready for inference (on CPU)
 
-        Example:
+        Example - Actor mode:
             >>> class InferenceActor:
             ...     def __init__(self, model_wrapper):
             ...         # Load model (on CPU)
@@ -310,22 +315,27 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
             ...
             ...     def __call__(self, batch):
             ...         return self.model(batch["data"])
+
+        Example - Task mode:
+            >>> wrapper = ModelWrapper.from_model(pipeline, mode="task")
+            >>> rewritten = wrapper.load()  # Get callable pipeline
+            >>> result = rewritten(data)  # Use the pipeline
         """
         if self._mode == "task":
-            # Task mode: return the rewritten pipeline
-            if self._rewritten is None:
-                raise ValueError("Task mode wrapper has no rewritten pipeline")
+            # Task mode: create rewritten pipeline on-demand
+            model_info: TaskModelInfo = self._model_info  # type: ignore[assignment]
+            rewritten = rzc_nn.load_pipeline_for_tasks(self._skeleton, model_info)
 
             if self._is_standalone_module:
-                loaded_container: _ModuleContainer = self._rewritten  # type: ignore[assignment]
+                loaded_container: _ModuleContainer = rewritten  # type: ignore[assignment]
                 return loaded_container.get_model()
             else:
-                return self._rewritten
+                return rewritten
         else:
             # Actor mode: load from object store
             pipeline = rzc_nn.load_pipeline_for_actors(
                 self._skeleton,
-                self._model_refs,
+                self.model_refs,  # Use property to get model_refs
                 use_fast_load=_use_fast_load,
             )
 
@@ -350,111 +360,50 @@ class ModelWrapper(WrapperMixin[T], Generic[T]):
         )
         return self.load(_use_fast_load=_use_fast_load)
 
-    def __call__(self, *args, **kwargs):
-        """Forward calls to the rewritten pipeline (task mode only)."""
-        if self._mode != "task":
-            raise TypeError(
-                "Cannot call actor mode wrapper directly. "
-                "Use wrapper.load() in the actor's __init__ first."
-            )
-        if self._rewritten is None:
-            raise ValueError("Task mode wrapper has no rewritten pipeline")
-
-        # For standalone modules, unwrap from container
-        if self._is_standalone_module:
-            container: _ModuleContainer = self._rewritten  # type: ignore[assignment]
-            return container.get_model()(*args, **kwargs)
-        else:
-            return self._rewritten(*args, **kwargs)
-
-    def __getattr__(self, name: str):
-        """Forward attribute access to the rewritten pipeline (task mode only)."""
-        # Avoid infinite recursion for private attributes
-        if name.startswith("_"):
-            raise AttributeError(
-                f"'{type(self).__name__}' object has no attribute '{name}'"
-            )
-
-        if self._mode != "task":
-            raise AttributeError(
-                "Cannot access attributes on actor mode wrapper. "
-                "Use wrapper.load() in the actor's __init__ first."
-            )
-        if self._rewritten is None:
-            raise ValueError("Task mode wrapper has no rewritten pipeline")
-
-        # For standalone modules, unwrap from container
-        if self._is_standalone_module:
-            container: _ModuleContainer = self._rewritten  # type: ignore[assignment]
-            return getattr(container.get_model(), name)
-        else:
-            return getattr(self._rewritten, name)
-
     def __getstate__(self):
         """Return state for pickling."""
-        state = {
+        return {
             "_skeleton": self._skeleton,
-            "_model_refs": self._model_refs,
+            "_model_info": self._model_info,
             "_is_standalone_module": self._is_standalone_module,
             "_mode": self._mode,
         }
 
-        # Include rewritten and model_info only for task mode
-        if self._mode == "task":
-            state["_rewritten"] = self._rewritten
-            state["_model_info"] = self._model_info
-
-        return state
-
     def __setstate__(self, state):
         """Restore state from pickling."""
         self._skeleton = state["_skeleton"]
-        self._model_refs = state["_model_refs"]
         self._is_standalone_module = state.get("_is_standalone_module", False)
         self._mode = state.get("_mode", "actor")
-
-        # Restore task mode fields if present
-        if self._mode == "task":
-            self._rewritten = state.get("_rewritten")
-            self._model_info = state.get("_model_info")
-        else:
-            self._rewritten = None
-            self._model_info = None
+        self._model_info = state["_model_info"]
 
     @classmethod
     def deserialize(
         cls,
         skeleton: T,
-        model_refs: dict[str, ray.ObjectRef],
+        model_info: ModelInfo,
         is_standalone_module: bool = False,
         mode: Literal["task", "actor"] = "actor",
-        rewritten: Optional[T] = None,
-        model_info: Optional[
-            dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]]
-        ] = None,
     ) -> "ModelWrapper[T]":
-        """Deserialize a ModelWrapper from a skeleton and model references."""
+        """Deserialize a ModelWrapper from a skeleton and model info.
+
+        Args:
+            skeleton: The skeleton of the model or pipeline
+            model_info: Model info dict. Task mode: TaskModelInfo, Actor mode: ActorModelInfo
+            is_standalone_module: Whether this is a standalone module
+            mode: Execution mode ("task" or "actor")
+        """
         return cls(
             skeleton,
-            model_refs,
+            model_info,
             is_standalone_module,
             mode,
-            rewritten,
-            model_info,
         )
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the ModelWrapper to a dictionary."""
-        result = {
+        return {
             "skeleton": self._skeleton,
-            "model_refs": self._model_refs,
+            "model_info": self._model_info,
             "is_standalone_module": self._is_standalone_module,
             "mode": self._mode,
         }
-
-        # Include task mode fields if applicable
-        if self._mode == "task":
-            result["rewritten"] = self._rewritten
-            result["model_info"] = self._model_info
-
-        return result

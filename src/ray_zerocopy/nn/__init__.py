@@ -7,20 +7,17 @@ This module provides utilities for:
 - High-level utility classes (utils.py)
 """
 
-from .actors import (
-    load_pipeline_for_actors,
-    prepare_pipeline_for_actors,
-)
-from .rewrite import prepare_pipeline
+from .actors import load_pipeline_for_actors
+from .rewrite import model_info_to_model_refs, prepare_pipeline
 from .tasks import load_pipeline_for_tasks, rewrite_pipeline
 
 __all__ = [
     # Actor-based functions
-    "prepare_pipeline_for_actors",
     "load_pipeline_for_actors",
     # Task-based functions
     "load_pipeline_for_tasks",
     "rewrite_pipeline",  # Convenience function
     # Generic pipeline preparation
     "prepare_pipeline",
+    "model_info_to_model_refs",
 ]

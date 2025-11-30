@@ -29,7 +29,7 @@ Primary API for zero-copy model sharing with nn.Module models.
 from ray_zerocopy import ModelWrapper
 
 model = MyModel()
-wrapper = ModelWrapper.from_model(model)
+wrapper = ModelWrapper.from_model(model)  # "actor" mode by default
 ```
 
 ### Using in Actors
@@ -93,7 +93,7 @@ wrapped = ModelWrapper.for_tasks(pipeline)
 - `pipeline` - PyTorch model or pipeline
 
 **Returns:**
-- `ModelWrapper` instance ready for immediate use
+- A converted model or pipeline
 
 ### load
 
@@ -182,7 +182,7 @@ wrapper = ModelWrapper.from_model(pipeline)
 print(wrapper._is_standalone_module)
 
 # See detected models
-print(wrapper._model_refs.keys())
+print(wrapper._model_info.keys())
 ```
 
 ## See Also

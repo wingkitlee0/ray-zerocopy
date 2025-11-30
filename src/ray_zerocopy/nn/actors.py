@@ -19,7 +19,7 @@ with Ray Data map_batches and ActorPoolStrategy.
 
 import copy
 import warnings
-from typing import Optional, TypeVar
+from typing import TypeVar
 
 import ray
 
@@ -28,59 +28,7 @@ from ray_zerocopy._internal.zerocopy import (
     replace_tensors_direct,
 )
 
-from .rewrite import prepare_pipeline
-
 T = TypeVar("T")
-
-
-def prepare_pipeline_for_actors(
-    pipeline: T,
-    model_attr_names: Optional[list] = None,
-) -> tuple[T, dict[str, ray.ObjectRef]]:
-    """
-    Prepare a pipeline object with PyTorch models for use in Ray actors.
-
-    This function extracts all PyTorch models from a pipeline object and stores
-    them in Ray's object store. Returns a skeleton and model references dict
-    that can be used to reconstruct the pipeline inside actors.
-
-    Args:
-        pipeline: Pipeline object containing PyTorch models as attributes
-        model_attr_names: List of attribute names that are models. If None,
-            auto-discovers all torch.nn.Module attributes
-
-    Returns:
-        Tuple of (pipeline_skeleton, model_refs_dict)
-
-    Example:
-        >>> class Pipeline:
-        ...     def __init__(self):
-        ...         self.encoder = EncoderModel()
-        ...         self.decoder = DecoderModel()
-        ...
-        ...     def __call__(self, data):
-        ...         encoded = self.encoder(data)
-        ...         return self.decoder(encoded)
-        >>>
-        >>> # Prepare pipeline for actors
-        >>> pipeline = Pipeline()
-        >>> skeleton, model_refs = prepare_pipeline_for_actors(pipeline)
-        >>>
-        >>> class InferenceActor:
-        ...     def __init__(self, skeleton, model_refs):
-        ...         self.pipeline = load_pipeline_for_actors(skeleton, model_refs)
-        ...
-        ...     def __call__(self, batch):
-        ...         return self.pipeline(batch["data"])
-    """
-    skeleton, model_info = prepare_pipeline(
-        pipeline,
-        model_attr_names=model_attr_names,
-        method_names=None,  # No method tracking for actors
-        filter_private=True,
-    )
-    # Convert to simpler dict format for actors (no method tracking needed)
-    return skeleton, {k: ref for k, (ref, _) in model_info.items()}
 
 
 def load_pipeline_for_actors(
@@ -95,8 +43,8 @@ def load_pipeline_for_actors(
     the models from the object store using zero-copy.
 
     Args:
-        pipeline_skeleton: Pipeline skeleton from prepare_pipeline_for_actors()
-        model_refs: Model references dict from prepare_pipeline_for_actors()
+        pipeline_skeleton: Pipeline skeleton from prepare_pipeline()
+        model_refs: Model references dict (can be obtained via model_info_to_model_refs())
         use_fast_load: Whether to use faster but slightly riskier loading method.
             If True, uses replace_tensors_direct. Default False.
 

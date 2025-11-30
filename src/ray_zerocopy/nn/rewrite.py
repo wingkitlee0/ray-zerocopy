@@ -129,3 +129,22 @@ def prepare_pipeline(
             setattr(pipeline_skeleton, attr_name, None)
 
     return pipeline_skeleton, model_info
+
+
+def model_info_to_model_refs(
+    model_info: dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]],
+) -> dict[str, ray.ObjectRef]:
+    """
+    Convert model_info dict to model_refs dict by extracting just the object references.
+
+    Args:
+        model_info: Dictionary mapping attribute names to (model_ref, allowed_methods) tuples
+
+    Returns:
+        Dictionary mapping attribute names to model_refs (object references only)
+
+    Example:
+        >>> skeleton, model_info = prepare_pipeline(pipeline, method_names=None)
+        >>> model_refs = model_info_to_model_refs(model_info)
+    """
+    return {attr_name: model_ref for attr_name, (model_ref, _) in model_info.items()}

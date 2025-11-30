@@ -67,7 +67,6 @@ Total: ~5GB
 getting_started
 model_wrapper_guide
 jit_wrappers
-user_guide/index
 api_reference/index
 ```
 

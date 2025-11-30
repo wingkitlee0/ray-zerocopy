@@ -42,9 +42,12 @@ def test_model_wrapper_task_mode_basic():
     model = SimpleModel()
     wrapper = ModelWrapper.from_model(model, mode="task")
 
-    # Should be callable immediately
+    # Load the rewritten pipeline
+    rewritten = wrapper.load()
+
+    # Should be callable
     test_input = torch.randn(3, 10)
-    result = wrapper(test_input)
+    result = rewritten(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
@@ -57,9 +60,12 @@ def test_model_wrapper_task_mode_pipeline():
     pipeline = SimplePipeline()
     wrapper = ModelWrapper.from_model(pipeline, mode="task")
 
-    # Should be callable immediately
+    # Load the rewritten pipeline
+    rewritten = wrapper.load()
+
+    # Should be callable
     test_input = torch.randn(3, 10)
-    result = wrapper(test_input)
+    result = rewritten(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
@@ -72,13 +78,13 @@ def test_model_wrapper_actor_mode_basic():
     model = SimpleModel()
     wrapper = ModelWrapper.from_model(model, mode="actor")
 
-    # Should not be callable directly
+    # Should not be callable directly (ModelWrapper is never callable)
     try:
         test_input = torch.randn(3, 10)
         result = wrapper(test_input)
-        assert False, "Should not be able to call actor mode wrapper directly"
-    except TypeError as e:
-        assert "actor mode wrapper" in str(e).lower()
+        assert False, "Should not be able to call ModelWrapper directly"
+    except (TypeError, AttributeError):
+        pass  # ModelWrapper is not callable
 
     # Should be loadable in actor
     loaded = wrapper.load()
@@ -119,9 +125,10 @@ def test_model_wrapper_pickling_task_mode():
     pickled = pickle.dumps(wrapper)
     restored = pickle.loads(pickled)
 
-    # Should still work
+    # Load the rewritten pipeline and test
+    rewritten = restored.load()
     test_input = torch.randn(3, 10)
-    result = restored(test_input)
+    result = rewritten(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
@@ -184,9 +191,12 @@ def test_model_wrapper_task_mode_custom_methods():
         model, mode="task", method_names=("forward", "predict")
     )
 
+    # Load the rewritten pipeline
+    rewritten = wrapper.load()
+
     # Should have access to the methods
     test_input = torch.randn(3, 10)
-    result = wrapper.forward(test_input)
+    result = rewritten.forward(test_input)
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
 
@@ -205,10 +215,13 @@ def test_model_wrapper_standalone_vs_pipeline():
     wrapper_pipeline = ModelWrapper.from_model(pipeline, mode="task")
     assert wrapper_pipeline._is_standalone_module is False
 
-    # Both should work
+    # Both should work after loading
+    rewritten_standalone = wrapper_standalone.load()
+    rewritten_pipeline = wrapper_pipeline.load()
+
     test_input = torch.randn(3, 10)
-    result_standalone = wrapper_standalone(test_input)
-    result_pipeline = wrapper_pipeline(test_input)
+    result_standalone = rewritten_standalone(test_input)
+    result_pipeline = rewritten_pipeline(test_input)
 
     assert result_standalone.shape == (3, 5)
     assert result_pipeline.shape == (3, 5)
@@ -237,30 +250,32 @@ def test_model_wrapper_serialize_deserialize():
 
 
 def test_model_wrapper_task_mode_attribute_access():
-    """Test that task mode wrapper forwards attribute access correctly."""
+    """Test that task mode wrapper loads pipeline with correct attributes."""
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True)
 
     pipeline = SimplePipeline()
     wrapper = ModelWrapper.from_model(pipeline, mode="task")
 
+    # Load the rewritten pipeline
+    rewritten = wrapper.load()
+
     # Should be able to access attributes from the rewritten pipeline
     # (though they'll be RemoteModelShims)
-    assert hasattr(wrapper, "encoder")
-    assert hasattr(wrapper, "decoder")
+    assert hasattr(rewritten, "encoder")
+    assert hasattr(rewritten, "decoder")
 
 
 def test_model_wrapper_actor_mode_attribute_error():
-    """Test that actor mode wrapper raises error on attribute access."""
+    """Test that ModelWrapper doesn't forward attribute access."""
     if not ray.is_initialized():
         ray.init(ignore_reinit_error=True)
 
     pipeline = SimplePipeline()
     wrapper = ModelWrapper.from_model(pipeline)
 
-    # Should raise error when trying to access attributes
-    try:
-        _ = wrapper.encoder
-        assert False, "Should raise AttributeError"
-    except AttributeError as e:
-        assert "actor mode wrapper" in str(e).lower()
+    # ModelWrapper doesn't forward attributes - it's not callable
+    # Attributes should only be accessible after loading
+    loaded = wrapper.load()
+    assert hasattr(loaded, "encoder")
+    assert hasattr(loaded, "decoder")

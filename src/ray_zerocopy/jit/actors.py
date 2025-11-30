@@ -76,9 +76,7 @@ def prepare_jit_model_for_actors(jit_model: torch.jit.ScriptModule) -> ray.Objec
     return ray.put(extract_tensors(jit_model))
 
 
-def load_jit_model_in_actor(
-    model_ref: ray.ObjectRef
-) -> torch.jit.ScriptModule:
+def load_jit_model_in_actor(model_ref: ray.ObjectRef) -> torch.jit.ScriptModule:
     """
     Load a TorchScript model inside a Ray actor from the object store using zero-copy.
 

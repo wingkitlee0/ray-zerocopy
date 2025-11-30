@@ -56,11 +56,14 @@ class MultiModelPipeline:
 def test_model_wrapper_task_basic():
     """Test basic ModelWrapper task mode functionality."""
     pipeline = SimplePipeline()
-    wrapped = ModelWrapper.from_model(pipeline, mode="task")
+    wrapper = ModelWrapper.from_model(pipeline, mode="task")
+
+    # Load the rewritten pipeline
+    rewritten = wrapper.load()
 
     # Test inference
     test_input = torch.randn(3, 10)
-    result = wrapped(test_input)
+    result = rewritten(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
     assert isinstance(result, torch.Tensor), "Result should be a tensor"
@@ -69,11 +72,11 @@ def test_model_wrapper_task_basic():
 def test_model_wrapper_for_tasks_shortcut():
     """Test ModelWrapper.for_tasks() shortcut."""
     pipeline = SimplePipeline()
-    wrapped = ModelWrapper.for_tasks(pipeline)
+    rewritten = ModelWrapper.for_tasks(pipeline)
 
     # Test inference
     test_input = torch.randn(3, 10)
-    result = wrapped(test_input)
+    result = rewritten(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
     assert isinstance(result, torch.Tensor), "Result should be a tensor"
@@ -82,11 +85,14 @@ def test_model_wrapper_for_tasks_shortcut():
 def test_model_wrapper_task_custom_method():
     """Test ModelWrapper task mode with custom method names."""
     pipeline = SimplePipeline()
-    wrapped = ModelWrapper.from_model(pipeline, mode="task", method_names=("predict",))
+    wrapper = ModelWrapper.from_model(pipeline, mode="task", method_names=("predict",))
+
+    # Load the rewritten pipeline
+    rewritten = wrapper.load()
 
     # Test custom method
     test_input = torch.randn(3, 10)
-    result = wrapped.predict(test_input)
+    result = rewritten.predict(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
@@ -94,10 +100,10 @@ def test_model_wrapper_task_custom_method():
 def test_model_wrapper_task_multi_model():
     """Test ModelWrapper task mode with multiple models."""
     pipeline = MultiModelPipeline()
-    wrapped = ModelWrapper.for_tasks(pipeline)
+    rewritten = ModelWrapper.for_tasks(pipeline)
 
     test_input = torch.randn(3, 10)
-    result = wrapped(test_input)
+    result = rewritten(test_input)
 
     assert result.shape == (3, 5), "Output shape should be (3, 5)"
 
@@ -348,7 +354,9 @@ def test_wrapper_api_consistency():
     jit_pipeline = JITPipeline()
 
     # All wrappers should accept similar constructor args
-    task_wrapper = ModelWrapper.for_tasks(nn_pipeline)
+    task_rewritten = ModelWrapper.for_tasks(
+        nn_pipeline
+    )  # Returns pipeline, not wrapper
     actor_wrapper = ModelWrapper.from_model(nn_pipeline, mode="actor")
     jit_task_wrapper = JITTaskWrapper(jit_pipeline)
     jit_actor_wrapper = JITActorWrapper(jit_pipeline)
@@ -356,6 +364,9 @@ def test_wrapper_api_consistency():
     # Actor wrappers should have to_pipeline() or load() method
     assert hasattr(actor_wrapper, "to_pipeline")
     assert hasattr(jit_actor_wrapper, "load")
+
+    # Task rewritten should be callable
+    assert callable(task_rewritten)
 
 
 def test_wrapper_determinism():
@@ -369,8 +380,8 @@ def test_wrapper_determinism():
         original_output = pipeline(test_input)
 
     # Test ModelWrapper task mode
-    wrapped = ModelWrapper.for_tasks(pipeline)
-    wrapped_output = wrapped(test_input)
+    rewritten = ModelWrapper.for_tasks(pipeline)
+    wrapped_output = rewritten(test_input)
     assert torch.allclose(original_output, wrapped_output, rtol=1e-4)
 
     # Test ModelWrapper actor mode
