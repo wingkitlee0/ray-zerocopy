@@ -17,7 +17,6 @@ dependencies = [
 [project.urls]
 Documentation = "https://ray-zerocopy.readthedocs.io"
 Source = "https://github.com/wingkitlee0/ray-zerocopy"
-Repository = "https://github.com/wingkitlee0/ray-zerocopy"
 
 [project.optional-dependencies]
 dev = [
