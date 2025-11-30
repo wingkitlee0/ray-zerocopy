@@ -4,10 +4,15 @@ import time
 from typing import Any, Callable, Union
 
 import ray
-from ray.data import ActorPoolStrategy
+
+# Lazy import for ray.data to avoid dependency issues when only using ray_core mode
+try:
+    from ray.data import ActorPoolStrategy
+except ImportError:
+    ActorPoolStrategy = None
 
 from ray_zerocopy import ModelWrapper
-from ray_zerocopy.benchmark import monitor_memory_context
+from ray_zerocopy.benchmark.monitor import monitor_memory_context
 from ray_zerocopy.benchmark.results import (
     aggregate_memory_stats_from_results,
     format_ray_core_results,

@@ -12,7 +12,7 @@ import ray
 import torch
 
 from ray_zerocopy import ModelWrapper
-from ray_zerocopy.benchmark import get_memory_mb, log_memory
+from ray_zerocopy.benchmark.monitor import get_memory_mb, log_memory
 from ray_zerocopy.wrappers import JITActorWrapper, JITTaskWrapper
 
 # Type alias for wrapper types
