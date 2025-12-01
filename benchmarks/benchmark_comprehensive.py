@@ -175,17 +175,24 @@ def main():
         if args.mode == "ray_core":
             # Run all three approaches with Ray Core
             approaches = {
-                "normal": lambda: run_ray_core_normal(
-                    model, args.workers, args.batches, args.batch_size, args.use_jit
+                "normal": partial(
+                    run_ray_core_normal,
+                    model=model,
+                    workers=args.workers,
+                    batches=args.batches,
+                    batch_size=args.batch_size,
+                    use_jit=args.use_jit,
                 ),
-                "task_based": lambda: run_ray_core_task_based(
+                "task_based": partial(
+                    run_ray_core_task_based,
                     model,
                     args.workers,
                     args.batches,
                     args.batch_size,
                     create_task_wrapper,
                 ),
-                "actor_based": lambda: run_ray_core_actor_based(
+                "actor_based": partial(
+                    run_ray_core_actor_based,
                     model,
                     args.workers,
                     args.batches,

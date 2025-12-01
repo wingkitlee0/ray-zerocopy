@@ -5,7 +5,6 @@ The wrappers are used via duck typing - any object with the appropriate interfac
 """
 
 import gc
-import io
 import os
 from typing import Any
 
@@ -59,26 +58,15 @@ def normal_task_worker(model_bytes_ref, batches, batch_size, use_jit: bool = Fal
 def task_based_worker(wrapped_pipeline, batches, batch_size):
     """Task-based worker using ModelWrapper.for_tasks() or JIT wrappers."""
     pid = os.getpid()
-    print(f"[Task-based] Worker {pid} started. Using zero-copy pipeline...")
+    with log_memory(f"Task-based Worker {pid}") as get_mem:
+        with torch.no_grad():
+            for _ in range(batches):
+                inputs = torch.randn(batch_size, 5000)
+                _ = wrapped_pipeline(inputs)
 
-    # Run inference using wrapped pipeline (zero-copy)
-    with torch.no_grad():
-        for _ in range(batches):
-            inputs = torch.randn(batch_size, 5000)
-            _ = wrapped_pipeline(inputs)
-
-    # Measure memory
-    gc.collect()
-    rss_mb = get_memory_mb(pid)
-    try:
-        process = psutil.Process(pid)
-        uss_mb = process.memory_full_info().uss / 1024 / 1024
-    except:
-        uss_mb = 0
-
-    print(
-        f"[Task-based] Worker {pid} ready. RSS: {rss_mb:.1f} MB, USS: {uss_mb:.1f} MB"
-    )
+    mem = get_mem()
+    rss_mb = mem["rss"]
+    uss_mb = mem["uss"]
 
     return {"pid": pid, "rss_mb": rss_mb, "uss_mb": uss_mb}
 

@@ -1,15 +1,13 @@
 """Execution functions for benchmarks that work with both ModelWrapper and JIT wrappers."""
 
-import io
 import time
 from typing import Any, Callable
 
 import ray
 from ray.data import ActorPoolStrategy
 
-from .ray_utils import ray_put_model
-
 from .monitor import monitor_memory_context
+from .ray_utils import ray_put_model
 from .results import (
     aggregate_memory_stats_from_results,
     format_ray_core_results,
@@ -25,6 +23,16 @@ from .workers import (
 
 # Type alias for wrapper types - using Any to be generic
 WrapperType = Any
+
+
+class DummyPipeline:
+    """Simple wrapper for a model"""
+
+    def __init__(self, model):
+        self.model = model
+
+    def __call__(self, x):
+        return self.model(x)
 
 
 def run_ray_core_normal(model, workers, batches, batch_size, use_jit: bool = False):
@@ -70,15 +78,7 @@ def run_ray_core_task_based(
     print("RAY CORE - TASK-BASED")
     print("=" * 80)
 
-    # Create pipeline wrapper
-    class Pipeline:
-        def __init__(self, model):
-            self.model = model
-
-        def __call__(self, x):
-            return self.model(x)
-
-    pipeline = Pipeline(model)
+    pipeline = DummyPipeline(model)
     wrapped_pipeline = create_wrapper(pipeline)
 
     with monitor_memory_context(interval=1.0) as memory_stats:
@@ -116,14 +116,7 @@ def run_ray_core_actor_based(
     print("=" * 80)
 
     # Create pipeline wrapper
-    class Pipeline:
-        def __init__(self, model):
-            self.model = model
-
-        def __call__(self, x):
-            return self.model(x)
-
-    pipeline = Pipeline(model)
+    pipeline = DummyPipeline(model)
     model_wrapper = create_wrapper(pipeline)
 
     with monitor_memory_context(interval=1.0) as memory_stats:
