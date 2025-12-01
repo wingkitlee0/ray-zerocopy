@@ -19,7 +19,7 @@ ray_zerocopy.actor but specifically for torch.jit.ScriptModule models.
 
 import copy
 import warnings
-from typing import Optional, TypeVar
+from typing import Optional, Set, TypeVar
 
 import ray
 import torch
@@ -230,3 +230,22 @@ def load_pipeline_for_actors(
         setattr(pipeline, attr_name, model)
 
     return pipeline
+
+
+def model_info_to_model_refs(
+    model_info: dict[str, tuple[ray.ObjectRef, Optional[Set[str]]]],
+) -> dict[str, ray.ObjectRef]:
+    """
+    Convert model_info dict to model_refs dict by extracting just the object references.
+
+    Args:
+        model_info: Dictionary mapping attribute names to (model_ref, allowed_methods) tuples
+
+    Returns:
+        Dictionary mapping attribute names to model_refs (object references only)
+
+    Example:
+        >>> skeleton, model_info = prepare_pipeline_for_tasks(pipeline, method_names=("__call__",))
+        >>> model_refs = model_info_to_model_refs(model_info)
+    """
+    return {attr_name: model_ref for attr_name, (model_ref, _) in model_info.items()}

@@ -13,8 +13,7 @@ import torch.nn as nn
 from ray.data import ActorPoolStrategy
 
 from ray_zerocopy import (
-    JITActorWrapper,
-    JITTaskWrapper,
+    JITModelWrapper,
     ModelWrapper,
 )
 
@@ -162,13 +161,13 @@ def example_actor_wrapper():
 
 
 # ============================================================================
-# Example 3: JITTaskWrapper - TorchScript with Ray Tasks
+# Example 3: JITModelWrapper Task Mode - TorchScript with Ray Tasks
 # ============================================================================
 
 
 def example_jit_task_wrapper():
     """
-    JITTaskWrapper executes TorchScript models in Ray tasks with zero-copy.
+    JITModelWrapper task mode executes TorchScript models in Ray tasks with zero-copy.
 
     Use this when:
     - Models are traced/scripted with torch.jit
@@ -176,7 +175,7 @@ def example_jit_task_wrapper():
     - Don't need stateful actors
     """
     print("\n" + "=" * 70)
-    print("Example 3: JITTaskWrapper (TorchScript + Ray Tasks)")
+    print("Example 3: JITModelWrapper Task Mode (TorchScript + Ray Tasks)")
     print("=" * 70)
 
     # Create pipeline and trace it
@@ -201,8 +200,8 @@ def example_jit_task_wrapper():
 
     jit_pipeline = JITPipeline(jit_encoder, jit_decoder)
 
-    # Wrap with JITTaskWrapper
-    wrapped = JITTaskWrapper(jit_pipeline)
+    # Wrap with JITModelWrapper (task mode)
+    wrapped = JITModelWrapper.for_tasks(jit_pipeline)
 
     # Run inference
     sample_data = torch.randn(32, 784)
@@ -214,15 +213,13 @@ def example_jit_task_wrapper():
 
 
 # ============================================================================
-# Example 4: JITActorWrapper - TorchScript with Ray Actors (NEW!)
+# Example 4: JITModelWrapper Actor Mode - TorchScript with Ray Actors
 # ============================================================================
 
 
 def example_jit_actor_wrapper():
     """
-    JITActorWrapper prepares TorchScript models for Ray actors.
-
-    This is NEW functionality! Previously, TorchScript didn't work with actors.
+    JITModelWrapper actor mode prepares TorchScript models for Ray actors.
 
     Use this when:
     - Using Ray Data with ActorPoolStrategy
@@ -230,7 +227,7 @@ def example_jit_actor_wrapper():
     - Want compiled model performance + actor benefits
     """
     print("\n" + "=" * 70)
-    print("Example 4: JITActorWrapper (TorchScript + Ray Actors) - NEW!")
+    print("Example 4: JITModelWrapper Actor Mode (TorchScript + Ray Actors)")
     print("=" * 70)
 
     # Create pipeline and trace it
@@ -272,14 +269,14 @@ def example_jit_actor_wrapper():
 
     jit_pipeline = JITPipeline(jit_encoder, jit_decoder)
 
-    # Wrap with JITActorWrapper
-    actor_wrapper = JITActorWrapper(jit_pipeline)
+    # Wrap with JITModelWrapper (actor mode)
+    wrapper = JITModelWrapper.from_model(jit_pipeline, mode="actor")
 
     # Define actor class
     class JITInferenceActor(Generic[T]):
-        def __init__(self, actor_wrapper: JITActorWrapper[T]):
+        def __init__(self, wrapper: JITModelWrapper[T]):
             # Load JIT pipeline inside actor
-            self.pipeline = actor_wrapper.load()
+            self.pipeline = wrapper.load()
 
         def __call__(self, batch: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
             # Process batch through JIT pipeline
@@ -298,7 +295,7 @@ def example_jit_actor_wrapper():
     # Run inference with actor pool
     results = ds.map_batches(
         JITInferenceActor,
-        fn_constructor_kwargs={"actor_wrapper": actor_wrapper},
+        fn_constructor_kwargs={"wrapper": wrapper},
         compute=ActorPoolStrategy(size=2),
         batch_size=10,
     )
@@ -306,7 +303,7 @@ def example_jit_actor_wrapper():
     print(f"✓ Processed {results.count()} batches with JIT actor pool")
     sample = results.take(1)[0]
     print(f"✓ Sample output shape: {sample['predictions'].shape}")
-    print("✓ This is NEW! TorchScript now works with Ray actors!")
+    print("✓ TorchScript models work with Ray actors!")
 
 
 # ============================================================================
