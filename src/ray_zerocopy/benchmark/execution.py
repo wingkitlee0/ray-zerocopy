@@ -5,8 +5,9 @@ import time
 from typing import Any, Callable
 
 import ray
-import torch
 from ray.data import ActorPoolStrategy
+
+from .ray_utils import ray_put_model
 
 from .monitor import monitor_memory_context
 from .results import (
@@ -32,12 +33,7 @@ def run_ray_core_normal(model, workers, batches, batch_size, use_jit: bool = Fal
     print("RAY CORE - NORMAL ACTOR (Baseline)")
     print("=" * 80)
 
-    if not use_jit:
-        model_ref = ray.put(model)
-    else:
-        model_bytes = io.BytesIO()
-        torch.jit.save(model, model_bytes)
-        model_ref = ray.put(model_bytes.getvalue())
+    model_ref = ray_put_model(model, use_jit=use_jit)
 
     with monitor_memory_context(interval=1.0) as memory_stats:
         start_time = time.time()
@@ -156,13 +152,7 @@ def run_ray_data_normal(model, workers, batches, batch_size, use_jit: bool = Fal
     print("RAY DATA - NORMAL ACTOR (Baseline)")
     print("=" * 80)
 
-    if not use_jit:
-        model_ref = ray.put(model)
-    else:
-        model_bytes = io.BytesIO()
-        torch.jit.save(model, model_bytes)
-        # model_ref = ray.put(model_bytes.getvalue())
-        model_ref = model_bytes.getvalue()
+    model_ref = ray_put_model(model, use_jit=use_jit)
 
     # Create dataset
     ds = ray.data.range(batches)

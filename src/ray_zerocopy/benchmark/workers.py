@@ -14,6 +14,7 @@ import ray
 import torch
 
 from .monitor import get_memory_mb, log_memory
+from .ray_utils import ray_get_model
 
 # Type alias for wrapper types - using Any to be generic
 WrapperType = Any
@@ -26,11 +27,7 @@ def normal_task_worker(model_bytes_ref, batches, batch_size, use_jit: bool = Fal
     pid = os.getpid()
     print(f"[Normal Task] Worker {pid} started. Loading model...")
 
-    if use_jit:
-        model_bytes = io.BytesIO(model_bytes_ref)
-        model = torch.jit.load(model_bytes)
-    else:
-        model = model_bytes_ref
+    model = ray_get_model(model_bytes_ref, use_jit=use_jit)
 
     # # Get the serialized model bytes and deserialize using torch.load()
     # model_bytes = ray.get(model_bytes_ref)
@@ -122,13 +119,7 @@ class NormalActorRayData:
     def __init__(self, model_ref, use_jit: bool = False):
         self.pid = os.getpid()
         with log_memory(f"Normal Actor {self.pid}") as get_mem:
-            # Get the serialized model bytes and deserialize using torch.load()
-
-            if use_jit:
-                model_bytes = io.BytesIO(model_ref)
-                self.model = torch.jit.load(model_bytes)
-            else:
-                self.model = ray.get(model_ref)
+            self.model = ray_get_model(model_ref, use_jit=use_jit)
 
         # Get memory from context manager (measured after gc.collect())
         mem = get_mem()
