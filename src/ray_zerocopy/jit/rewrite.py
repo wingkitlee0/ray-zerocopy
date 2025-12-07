@@ -24,7 +24,12 @@ import warnings
 from collections import OrderedDict
 from typing import Tuple
 
+import os
+
 import torch
+
+# Check if Ray is configured to support zero-copy tensor serialization
+USE_DIRECT_TENSORS = os.environ.get("RAY_ENABLE_ZERO_COPY_TENSOR_SERIALIZATION") == "1"
 
 
 def extract_tensors(
@@ -36,7 +41,7 @@ def extract_tensors(
 
     Unlike regular PyTorch models, TorchScript models are compiled and have
     a frozen graph structure. This function:
-    1. Extracts all parameters/buffers as NumPy arrays (for zero-copy via Ray)
+    1. Extracts all parameters/buffers as Tensors (for zero-copy via Ray)
     2. Serializes the model structure
 
     Args:
@@ -45,7 +50,7 @@ def extract_tensors(
     Returns:
         A tuple with two elements:
         * Serialized model structure (bytes)
-        * Dictionary mapping parameter names to NumPy arrays
+        * Dictionary mapping parameter names to Tensors
     """
     if not isinstance(m, torch.jit.ScriptModule):
         raise TypeError(
@@ -53,13 +58,16 @@ def extract_tensors(
             "Use ray_zerocopy.extract_tensors() for regular torch.nn.Module models."
         )
 
-    # Extract all parameters and buffers as numpy arrays
+    # Extract all parameters and buffers as tensors
     state_dict = m.state_dict()
-    tensors_as_numpy = OrderedDict()
+    tensors = OrderedDict()
 
     for name, tensor in state_dict.items():
         # Clone and detach to ensure we have our own copy
-        tensors_as_numpy[name] = torch.clone(tensor).detach().cpu().numpy()
+        if USE_DIRECT_TENSORS:
+            tensors[name] = torch.clone(tensor).detach().cpu()
+        else:
+            tensors[name] = torch.clone(tensor).detach().cpu().numpy()
 
     # Serialize the model structure
     # Note: TorchScript serialization will include the current weights,
@@ -68,7 +76,7 @@ def extract_tensors(
     torch.jit.save(m, buffer)
     model_bytes = buffer.getvalue()
 
-    return model_bytes, tensors_as_numpy
+    return model_bytes, tensors
 
 
 def _make_tensor_from_array(array):
@@ -91,8 +99,9 @@ def replace_tensors(model_bytes: bytes, tensors: OrderedDict) -> torch.jit.Scrip
     operations when possible.
 
     Args:
+
         model_bytes: Serialized TorchScript model structure (from torch.jit.save)
-        tensors: Dictionary mapping parameter names to NumPy arrays
+        tensors: Dictionary mapping parameter names to Tensors
 
     Returns:
         A fully functional TorchScript model ready for inference
@@ -102,13 +111,18 @@ def replace_tensors(model_bytes: bytes, tensors: OrderedDict) -> torch.jit.Scrip
     model = torch.jit.load(buffer)
 
     # Convert numpy arrays back to tensors (zero-copy when possible)
+    # or use existing tensors
     state_dict = OrderedDict()
-    for name, array in tensors.items():
-        try:
-            tensor = _make_tensor_from_array(array)
-        except Exception:
-            # Fallback to copy if zero-copy fails
-            tensor = torch.as_tensor(array.copy())
+    for name, tensor_or_array in tensors.items():
+        if isinstance(tensor_or_array, torch.Tensor):
+            tensor = tensor_or_array
+        else:
+            # It's a numpy array
+            try:
+                tensor = _make_tensor_from_array(tensor_or_array)
+            except Exception:
+                # Fallback to copy if zero-copy fails
+                tensor = torch.as_tensor(tensor_or_array.copy())
         state_dict[name] = tensor
 
     # Load the real weights into the model
@@ -135,7 +149,7 @@ def extract_tensors_minimal(
         m: A TorchScript model (torch.jit.ScriptModule)
 
     Returns:
-        A tuple of (serialized model bytes, tensors as numpy arrays)
+        A tuple of (serialized model bytes, tensors as Tensors)
     """
     if not isinstance(m, torch.jit.ScriptModule):
         raise TypeError(
@@ -143,12 +157,15 @@ def extract_tensors_minimal(
             "Use ray_zerocopy.extract_tensors() for regular torch.nn.Module models."
         )
 
-    # Extract all parameters and buffers as numpy arrays
+    # Extract all parameters and buffers as tensors
     original_state_dict = m.state_dict()
-    tensors_as_numpy = OrderedDict()
+    tensors = OrderedDict()
 
     for name, tensor in original_state_dict.items():
-        tensors_as_numpy[name] = torch.clone(tensor).detach().cpu().numpy()
+        if USE_DIRECT_TENSORS:
+            tensors[name] = torch.clone(tensor).detach().cpu()
+        else:
+            tensors[name] = torch.clone(tensor).detach().cpu().numpy()
 
     # Create a state dict with minimal (bool) tensors to reduce skeleton size
     minimal_state_dict = OrderedDict()
@@ -164,7 +181,7 @@ def extract_tensors_minimal(
         buffer = io.BytesIO()
         torch.jit.save(m_copy, buffer)
         model_bytes = buffer.getvalue()
-        return model_bytes, tensors_as_numpy
+        return model_bytes, tensors
     except Exception as e:
         # Fall back to the regular method
         warnings.warn(

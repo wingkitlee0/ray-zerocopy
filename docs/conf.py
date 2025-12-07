@@ -19,6 +19,7 @@ author = "Kit Lee"
 # Read version from package
 try:
     from ray_zerocopy import __version__
+
     release = __version__
 except ImportError:
     # Fallback if package not installed

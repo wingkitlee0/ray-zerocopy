@@ -232,7 +232,9 @@ class ActorBasedRayData:
 # ============================================================================
 
 
-def aggregate_memory_stats_from_results(results_df, memory_stats, workers, use_monitor_peak=False):
+def aggregate_memory_stats_from_results(
+    results_df, memory_stats, workers, use_monitor_peak=False
+):
     """Aggregate memory statistics from Ray Data results DataFrame.
 
     Args:
@@ -560,7 +562,9 @@ def run_ray_data_task_based(model, workers, batches, batch_size, duration):
     # Aggregate memory stats
     # For task-based execution, use monitor peak values since tasks are short-lived
     # and DataFrame aggregation would incorrectly sum memory from many different PIDs
-    mem_stats = aggregate_memory_stats_from_results(results_df, memory_stats, workers, use_monitor_peak=True)
+    mem_stats = aggregate_memory_stats_from_results(
+        results_df, memory_stats, workers, use_monitor_peak=True
+    )
 
     return {
         "peak_total_rss_mb": mem_stats["total_rss"],

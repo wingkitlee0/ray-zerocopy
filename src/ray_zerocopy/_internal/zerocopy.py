@@ -31,14 +31,20 @@ import copy
 import warnings
 from typing import Any, Dict, List, Tuple
 
+import os
+
+import numpy as np
 import ray
 import torch
+
+# Check if Ray is configured to support zero-copy tensor serialization
+USE_DIRECT_TENSORS = os.environ.get("RAY_ENABLE_ZERO_COPY_TENSOR_SERIALIZATION") == "1"
 
 
 def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
     """
-    Remove the tensors from a PyTorch model, convert them to NumPy
-    arrays, and return the stripped model and tensors.
+    Remove the tensors from a PyTorch model, extract them as Tensors,
+    and return the stripped model and tensors.
 
     Args:
         m: Root node of a PyTorch model encoded as a graph of subclasses of
@@ -57,14 +63,20 @@ def extract_tensors(m: torch.nn.Module) -> Tuple[torch.nn.Module, List[Dict]]:
     tensors = []
     for _, module in m.named_modules():
         # Store the tensors in Python dictionaries
-        params = {
-            name: torch.clone(param).detach().numpy()
-            for name, param in module.named_parameters(recurse=False)
-        }
-        buffers = {
-            name: torch.clone(buf).detach().numpy()
-            for name, buf in module.named_buffers(recurse=False)
-        }
+        params = {}
+        for name, param in module.named_parameters(recurse=False):
+            if USE_DIRECT_TENSORS:
+                params[name] = torch.clone(param).detach().cpu()
+            else:
+                params[name] = torch.clone(param).detach().numpy()
+
+        buffers = {}
+        for name, buf in module.named_buffers(recurse=False):
+            if USE_DIRECT_TENSORS:
+                buffers[name] = torch.clone(buf).detach().cpu()
+            else:
+                buffers[name] = torch.clone(buf).detach().numpy()
+
         tensors.append({"params": params, "buffers": buffers})
 
     # Make a copy of the original model and strip all tensors and
@@ -103,13 +115,22 @@ def replace_tensors(m: torch.nn.Module, tensors: List[Dict]):
         modules = [module for _, module in m.named_modules()]
         for module, tensor_dict in zip(modules, tensors):
             # There are separate APIs to set parameters and buffers.
-            for name, array in tensor_dict["params"].items():
-                tensor = _make_tensor_from_array(array)
+            # There are separate APIs to set parameters and buffers.
+            for name, tensor_or_array in tensor_dict["params"].items():
+                if isinstance(tensor_or_array, np.ndarray):
+                    tensor = _make_tensor_from_array(tensor_or_array)
+                else:
+                    tensor = tensor_or_array
+
                 module.register_parameter(
                     name, torch.nn.Parameter(tensor, requires_grad=False)
                 )
-            for name, array in tensor_dict["buffers"].items():
-                tensor = _make_tensor_from_array(array)
+            for name, tensor_or_array in tensor_dict["buffers"].items():
+                if isinstance(tensor_or_array, np.ndarray):
+                    tensor = _make_tensor_from_array(tensor_or_array)
+                else:
+                    tensor = tensor_or_array
+
                 module.register_buffer(name, tensor)
 
 
@@ -142,13 +163,22 @@ def replace_tensors_direct(m: torch.nn.Module, tensors: List[Dict]):
         modules = [module for _, module in m.named_modules()]
         for module, tensor_dict in zip(modules, tensors):
             # There are separate APIs to set parameters and buffers.
-            for name, array in tensor_dict["params"].items():
-                tensor = _make_tensor_from_array(array)
+            # There are separate APIs to set parameters and buffers.
+            for name, tensor_or_array in tensor_dict["params"].items():
+                if isinstance(tensor_or_array, np.ndarray):
+                    tensor = _make_tensor_from_array(tensor_or_array)
+                else:
+                    tensor = tensor_or_array
+
                 # Super fast, somewhat risky version avoids
                 # wrapping parameters in Parameters objects.
                 module._parameters[name] = tensor
-            for name, array in tensor_dict["buffers"].items():
-                tensor = _make_tensor_from_array(array)
+            for name, tensor_or_array in tensor_dict["buffers"].items():
+                if isinstance(tensor_or_array, np.ndarray):
+                    tensor = _make_tensor_from_array(tensor_or_array)
+                else:
+                    tensor = tensor_or_array
+
                 module.register_buffer(name, tensor)
 
 
